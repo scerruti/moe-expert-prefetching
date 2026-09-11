@@ -36,4 +36,10 @@ See [`SYSTEM_DESIGN.md`](SYSTEM_DESIGN.md) for full technical roadmap.
 
 ---
 
+## Contributors
+
+See [CONTRIBUTORS.md](CONTRIBUTORS.md) for team details.
+
+---
+
 For questions or context, see [`docs/conversations/`](docs/conversations/) for design discussions.
