@@ -221,12 +221,19 @@ where $y_i = 1$ if $i \in \mathcal{K}(x_{t+1}, l)$, else 0.
 - Can run locally on Colab with manageable memory footprint
 - **Note:** Mixtral architecture well-understood and reliable for code/algorithm validation, but not necessarily the model used for the final research
 
-**Research Model (Candidates):** 
-- **Qwen3.8-27B:** ❌ NOT MoE (confirmed dense model with Gated DeltaNet + Attention + FFN). **Do not use for this project.**
-- **DeepSeek-Coder-V2-Lite:** Sparse MoE, explicitly optimized for code synthesis and mathematical reasoning (preferred if confirmed MoE)
-- **Qwen3 MoE (30B or 235B):** 128 routed experts with top-2 activation (candidate if confirmed as MoE variant, not the dense Qwen3.8)
+**Research Model (Locked):** **DeepSeek-V2-Lite** ("Goldilocks" option)
+- **Expert count:** 64 routed experts, top-6 routing (6 active per token)
+- **Parameters:** 16B total, 2.4B active per token
+- **Hardware:** 40GB GPU (single A40 or equivalent; ideal for RunPod)
+- **Rationale:** Complex enough (64 experts) to prove predictor accuracy meaningful, small enough to run efficiently; strong performance on coding + math benchmarks
+- **Confirmed:** ✅ Sparse MoE architecture, code-optimized
 
-**See docs/MODEL_VERIFICATION.md for architecture confirmation details.**
+**Fallback (if DeepSeek-V2-Lite unavailable):**
+- **Qwen3 MoE (30B or 235B):** 128 routed experts (larger scale, needs verification it's MoE variant)
+
+**Rejected:**
+- **Qwen3.8-27B:** ❌ NOT MoE (confirmed dense model)
+- See docs/MODEL_VERIFICATION.md for details
 
 **Other Variants Considered:**
 * **DBRX Instruct (Databricks):** 132B total / 36B active; programming & data tasks emphasis.
@@ -234,11 +241,15 @@ where $y_i = 1$ if $i \in \mathcal{K}(x_{t+1}, l)$, else 0.
 * **Snowflake Arctic:** 128 experts with top-2 routing; enterprise tuning.
 
 **Strategy:**
-1. Validate all software (telemetry, hooks, data pipeline) on **Mixtral 8x7B** (Colab) to prove code works
-2. Confirm MoE status of **Qwen3.8-27B** before committing to research runs
-3. If Qwen3.8-27B confirmed MoE: migrate telemetry to that model on RunPod for actual research
-4. If Qwen3.8-27B not MoE: select next best confirmed-MoE model and proceed
-5. No code changes needed for model swap—only module path adjustments for router layer hooks
+1. **MVP Phase (Colab):** Validate all software (telemetry hooks, data pipeline) on **Mixtral 8x7B**
+   - Goal: Prove code works, validate determinism, refine Parquet schema
+   - Runtime: ~hours per dataset (manageable on Colab GPU)
+2. **Research Phase (RunPod):** Migrate to **DeepSeek-V2-Lite** on 40GB A40 GPU
+   - Goal: Profile routing on 64-expert model, train lookahead predictor, measure prefetch viability
+   - Migration: Module path only (`block_sparse_moe.gate` → `mlp.gate`), no other code changes
+3. **Scaling (Post-MVP, if needed):** Move to Qwen3 MoE (128 experts) for production validation
+
+**Code portability:** Same hooks, schema, and analysis—only expert array sizing and module paths differ.
 
 ### Environment
 
