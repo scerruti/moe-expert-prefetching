@@ -95,14 +95,21 @@ def get_issue_details(issue_number: int) -> dict:
     return json.loads(output)
 
 def create_feature_branch(issue_number: int, title: str) -> str:
-    """Create feature branch from issue title."""
+    """Create feature branch from issue title, or reuse if exists."""
     # Convert title to branch name (lowercase, hyphens, no special chars)
     branch_name = re.sub(r'[^a-z0-9\s-]', '', title.lower())
     branch_name = re.sub(r'\s+', '-', branch_name)[:40]  # Limit length
     branch_name = f"feature/{issue_number}-{branch_name}"
 
-    print(f"\n📦 Creating branch: {branch_name}")
-    run_cmd(f"git checkout -b {branch_name}")
+    # Check if branch already exists
+    existing = run_cmd(f"git rev-parse --verify {branch_name}", check=False)
+    if existing:
+        print(f"\n📦 Reusing existing branch: {branch_name}")
+        run_cmd(f"git checkout {branch_name}")
+    else:
+        print(f"\n📦 Creating branch: {branch_name}")
+        run_cmd(f"git checkout -b {branch_name}")
+
     return branch_name
 
 def extract_acceptance_criteria(issue_body: str) -> list:
