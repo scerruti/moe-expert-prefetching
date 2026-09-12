@@ -106,20 +106,36 @@ def create_feature_branch(issue_number: int, title: str) -> str:
     return branch_name
 
 def extract_acceptance_criteria(issue_body: str) -> list:
-    """Extract acceptance criteria from issue body."""
+    """Extract acceptance criteria and tasks from issue body."""
     criteria = []
-    in_criteria = False
+    in_section = False
+    current_section = None
 
     for line in issue_body.split('\n'):
-        if 'Acceptance Criteria' in line or 'acceptance criteria' in line:
-            in_criteria = True
+        # Check for section headers (Tasks or Acceptance Criteria)
+        if 'Tasks' in line and ':' in line:
+            current_section = 'tasks'
+            in_section = True
+            continue
+        elif ('Acceptance Criteria' in line or 'acceptance criteria' in line) and ':' in line:
+            current_section = 'criteria'
+            in_section = True
+            continue
+        elif line.startswith('##'):  # Next section
+            in_section = False
             continue
 
-        if in_criteria:
-            if line.startswith('##'):  # Next section
-                break
-            if line.strip().startswith('- [ ]'):
-                criteria.append(line.strip())
+        # Extract items from current section
+        if in_section:
+            stripped = line.strip()
+            # Match both checkbox items (- [ ]) and regular bullets (-)
+            if stripped.startswith('- '):
+                # Remove checkbox if present (- [ ] or - [x]) and keep the text
+                item = stripped[2:].strip()  # Remove leading "- "
+                if item.startswith('[ ]') or item.startswith('[x]'):
+                    item = item[4:].strip()  # Remove "[x] " or "[ ] "
+                if item:
+                    criteria.append(item)
 
     return criteria if criteria else ["Issue resolved and PR passes review"]
 
