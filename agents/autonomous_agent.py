@@ -109,19 +109,16 @@ def extract_acceptance_criteria(issue_body: str) -> list:
     """Extract acceptance criteria and tasks from issue body."""
     criteria = []
     in_section = False
-    current_section = None
 
     for line in issue_body.split('\n'):
-        # Check for section headers (Tasks or Acceptance Criteria)
-        if 'Tasks' in line and ':' in line:
-            current_section = 'tasks'
-            in_section = True
+        # Check for section headers (look for ## Tasks or ## Acceptance Criteria)
+        if line.startswith('##'):
+            # Start collecting items if we find Tasks or Acceptance Criteria section
+            in_section = 'tasks' in line.lower() or 'acceptance' in line.lower()
             continue
-        elif ('Acceptance Criteria' in line or 'acceptance criteria' in line) and ':' in line:
-            current_section = 'criteria'
-            in_section = True
-            continue
-        elif line.startswith('##'):  # Next section
+
+        # If we encounter another header (##), stop collecting
+        if line.startswith('##') or (line.startswith('#') and not line.startswith('##')):
             in_section = False
             continue
 
@@ -130,10 +127,13 @@ def extract_acceptance_criteria(issue_body: str) -> list:
             stripped = line.strip()
             # Match both checkbox items (- [ ]) and regular bullets (-)
             if stripped.startswith('- '):
-                # Remove checkbox if present (- [ ] or - [x]) and keep the text
-                item = stripped[2:].strip()  # Remove leading "- "
-                if item.startswith('[ ]') or item.startswith('[x]'):
-                    item = item[4:].strip()  # Remove "[x] " or "[ ] "
+                # Remove leading "- "
+                item = stripped[2:].strip()
+                # Remove checkbox markers if present ([ ] or [x])
+                if item.startswith('[ ]'):
+                    item = item[3:].strip()
+                elif item.startswith('[x]') or item.startswith('[X]'):
+                    item = item[3:].strip()
                 if item:
                     criteria.append(item)
 
