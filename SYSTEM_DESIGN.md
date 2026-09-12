@@ -221,15 +221,12 @@ where $y_i = 1$ if $i \in \mathcal{K}(x_{t+1}, l)$, else 0.
 - Can run locally on Colab with manageable memory footprint
 - **Note:** Mixtral architecture well-understood and reliable for code/algorithm validation, but not necessarily the model used for the final research
 
-**Research Model (Pending Verification):** **Qwen3.8-27B** (candidate; MoE status needs confirmation)
-- Suggested by Taylor Berg-Kirkpatrick for strong performance and efficiency
-- **⚠️ CRITICAL:** Need to verify that Qwen3.8-27B is actually MoE; Taylor noted uncertainty ("oh actually that Qwen model might not even be MoE, so nvm!")
-- If confirmed MoE: good balance of scale (27B params) and if both fit on RunPod, no harder than 8B model
+**Research Model (Candidates):** 
+- **Qwen3.8-27B:** ❌ NOT MoE (confirmed dense model with Gated DeltaNet + Attention + FFN). **Do not use for this project.**
+- **DeepSeek-Coder-V2-Lite:** Sparse MoE, explicitly optimized for code synthesis and mathematical reasoning (preferred if confirmed MoE)
+- **Qwen3 MoE (30B or 235B):** 128 routed experts with top-2 activation (candidate if confirmed as MoE variant, not the dense Qwen3.8)
 
-**Fallback Options (if Qwen3.8-27B is not MoE):**
-- **DeepSeek-Coder-V2-Lite:** Sparse MoE, explicitly optimized for code synthesis and mathematical reasoning
-- **Qwen3 MoE (30B or 235B):** 128 routed experts with top-2 activation; confirmed MoE architecture
-- **Mixtral 8x22B Instruct:** Larger general-purpose sparse MoE for reasoning tasks
+**See docs/MODEL_VERIFICATION.md for architecture confirmation details.**
 
 **Other Variants Considered:**
 * **DBRX Instruct (Databricks):** 132B total / 36B active; programming & data tasks emphasis.
