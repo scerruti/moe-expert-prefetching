@@ -61,17 +61,31 @@ def get_repo_info() -> tuple:
     return None
 
 def get_unblocked_issues(labels: str) -> list:
-    """Get issues matching the specified labels."""
+    """Get issues matching any of the specified labels (OR logic)."""
     repo = get_repo_info()
     if not repo:
         print("❌ Error: Could not determine repository from git remote")
         sys.exit(1)
 
-    cmd = f'gh issue list --repo {repo} --label "{labels}" --state open --json number,title,body'
-    output = run_cmd(cmd)
-    if not output:
-        return []
-    return json.loads(output)
+    # Split labels and query each separately (OR logic)
+    label_list = [l.strip() for l in labels.split(',')]
+    all_issues = []
+    seen_numbers = set()
+
+    for label in label_list:
+        cmd = f'gh issue list --repo {repo} --label "{label}" --state open --json number,title,body'
+        output = run_cmd(cmd, check=False)
+        if output:
+            try:
+                issues = json.loads(output)
+                for issue in issues:
+                    if issue['number'] not in seen_numbers:
+                        all_issues.append(issue)
+                        seen_numbers.add(issue['number'])
+            except:
+                pass
+
+    return all_issues
 
 def get_issue_details(issue_number: int) -> dict:
     """Get full issue details."""
@@ -109,7 +123,96 @@ def extract_acceptance_criteria(issue_body: str) -> list:
 
     return criteria if criteria else ["Issue resolved and PR passes review"]
 
-def ask_claude(issue: dict, conversation_history: list) -> dict:
+def handle_write_file(path: str, content: str) -> str:
+    """Handle write_file tool invocation."""
+    try:
+        # Ensure directory exists
+        directory = os.path.dirname(path)
+        if directory and not os.path.exists(directory):
+            os.makedirs(directory, exist_ok=True)
+
+        # Write the file
+        with open(path, 'w') as f:
+            f.write(content)
+
+        return f"✅ File written: {path}"
+    except Exception as e:
+        return f"❌ Error writing file {path}: {str(e)}"
+
+def process_tool_calls(response, conversation_history: list) -> tuple:
+    """Process tool calls from Claude's response and return updated history."""
+    assistant_message = None
+    tool_results = []
+
+    # Build the assistant response for history
+    assistant_content = []
+
+    for block in response.content:
+        if hasattr(block, 'text'):
+            # Text block
+            if block.text:
+                assistant_message = block.text
+                assistant_content.append({"type": "text", "text": block.text})
+        elif block.type == "tool_use":
+            # Tool use block
+            assistant_content.append({
+                "type": "tool_use",
+                "id": block.id,
+                "name": block.name,
+                "input": block.input
+            })
+
+            # Execute tool
+            if block.name == "write_file":
+                path = block.input.get("path")
+                content = block.input.get("content", "")
+                result = handle_write_file(path, content)
+                print(f"  {result}")
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": result
+                })
+            elif block.name == "bash":
+                cmd = block.input.get("command", "")
+                try:
+                    result = run_cmd(cmd, check=False)
+                    print(f"  $ {cmd}\n  {result}")
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result
+                    })
+                except Exception as e:
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": f"Error: {str(e)}"
+                    })
+            else:
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": f"Unknown tool: {block.name}"
+                })
+
+    # Add assistant message to history
+    if assistant_content:
+        conversation_history.append({
+            "role": "assistant",
+            "content": assistant_content
+        })
+
+    # Add tool results if any
+    if tool_results:
+        conversation_history.append({
+            "role": "user",
+            "content": tool_results
+        })
+
+    return assistant_message, tool_results
+
+def ask_claude(issue: dict, conversation_history: list, autonomous: bool = False) -> dict:
     """Ask Claude to work on the issue."""
     issue_number = issue['number']
     title = issue['title']
@@ -121,15 +224,37 @@ def ask_claude(issue: dict, conversation_history: list) -> dict:
     system_prompt = """You are an expert software engineer working on a research project.
 Your task is to work on GitHub issues by:
 
-1. Understanding the issue requirements and acceptance criteria
-2. Implementing the code changes needed
-3. Running tests and validation
-4. Creating proper git commits
-5. Ensuring all acceptance criteria are met
+1. **Review project context first** (CRITICAL):
+   - Read SYSTEM_DESIGN.md to understand the 5-phase roadmap
+   - Read phase_N/docs/STATUS.md and phase_N/docs/CHECKLIST.md for detailed requirements
+   - Review phase_N/docs/ARCHITECTURE.md for implementation guidance
+   - This ensures you understand where files should go and what they should contain
 
-You have access to run shell commands (bash) and can read/edit files in the repository.
+2. Understanding the issue requirements and acceptance criteria
+3. Implementing the code changes needed
+4. Running tests and validation
+5. Creating proper git commits
+6. Ensuring all acceptance criteria are met
+
+CRITICAL: You have access to two tools:
+
+1. **bash**: Run shell commands to:
+   - Read files and explore directories (cat, ls, find, grep)
+   - Run tests and validation
+   - Execute git operations (commit, push, etc)
+
+2. **write_file**: Create or modify files:
+   - Provide the complete file path and content
+   - Parent directories are created automatically
+   - Always use this tool for creating new files or modifying existing ones
+
+IMPORTANT:
+- For reading files: Use bash with cat/grep/etc
+- For creating/modifying files: ALWAYS use write_file tool, NEVER bash echo
+- Run tests and git operations with bash
+- Never create empty directories—they're created automatically when files are written
+
 Follow the repository's coding standards and conventions.
-
 When you're done implementing all acceptance criteria, indicate that the issue is ready for PR submission."""
 
     # Build message with issue context
@@ -152,9 +277,12 @@ When you're done implementing all acceptance criteria, indicate that the issue i
 
 Start by exploring the repository structure and understanding what needs to be done."""
     else:
-        user_message = input("📝 Your feedback (or 'done' to submit PR): ").strip()
-        if user_message.lower() == 'done':
-            return {"status": "ready_for_pr", "message": "User confirmed implementation complete"}
+        if autonomous:
+            user_message = "Continue working on the issue. Show progress and let me know when all acceptance criteria are met."
+        else:
+            user_message = input("📝 Your feedback (or 'done' to submit PR, default=continue): ").strip() or "Continue working"
+            if user_message.lower() == 'done':
+                return {"status": "ready_for_pr", "message": "User confirmed implementation complete"}
 
     # Add to conversation
     conversation_history.append({
@@ -164,19 +292,56 @@ Start by exploring the repository structure and understanding what needs to be d
 
     print(f"\n🤖 Claude is working on issue #{issue_number}...")
 
-    # Call Claude
+    # Call Claude with tools
     response = client.messages.create(
         model="claude-opus-5",
         max_tokens=16000,
         system=system_prompt,
+        tools=[
+            {
+                "name": "bash",
+                "description": "Run bash commands to explore the repository, run tests, and perform git operations",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": "The bash command to run"
+                        }
+                    },
+                    "required": ["command"]
+                }
+            },
+            {
+                "name": "write_file",
+                "description": "Create or modify a file with the given content. Automatically creates parent directories.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "The file path to create or modify"
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "The complete file content"
+                        }
+                    },
+                    "required": ["path", "content"]
+                }
+            }
+        ],
         messages=conversation_history
     )
 
-    assistant_message = response.content[0].text
-    conversation_history.append({
-        "role": "assistant",
-        "content": assistant_message
-    })
+    # Process tool calls and extract text
+    assistant_message, tool_results = process_tool_calls(response, conversation_history)
+
+    if not assistant_message:
+        assistant_message = "Claude is working on the implementation..."
+
+    if tool_results:
+        print(f"\n📝 Files created/modified")
 
     print(f"\n{assistant_message}")
 
@@ -212,7 +377,7 @@ Generated with Claude Autonomous Agent"""
 
     return pr_url
 
-def work_on_issue(issue: dict) -> bool:
+def work_on_issue(issue: dict, autonomous: bool = False) -> bool:
     """Work on a single issue until completion."""
     issue_number = issue['number']
     title = issue['title']
@@ -228,7 +393,7 @@ def work_on_issue(issue: dict) -> bool:
     conversation_history = []
 
     while True:
-        result = ask_claude(issue, conversation_history)
+        result = ask_claude(issue, conversation_history, autonomous=autonomous)
 
         if result["status"] == "ready_for_pr":
             # Verify git changes
@@ -246,15 +411,31 @@ def work_on_issue(issue: dict) -> bool:
             else:
                 print("⚠️ No changes detected. Please verify implementation.")
 
-        # Ask user if ready to continue or submit
-        user_input = input("\n⏭️  Continue working? (yes/no/submit): ").strip().lower()
+        # Ask user if ready to continue or submit (unless quiet mode)
+        if autonomous:
+            user_input = "yes"  # Auto-continue in quiet mode
+        else:
+            user_input = input("\n⏭️  Continue working? (yes/no/submit, default=yes): ").strip().lower() or "yes"
+
         if user_input == 'submit' or user_input == 'no':
-            # Commit and create PR
-            status = run_cmd("git status --short", check=False)
-            if status:
-                run_cmd(f'git add -A && git commit -m "Issue #{issue_number}: {title}"')
+            # Check if there are actual commits on this branch
+            commits = run_cmd(f"git log main..HEAD --oneline", check=False)
+            if commits:
+                # Branch has commits, safe to create PR
                 create_pull_request(issue_number, branch_name, title)
-            return True
+                return True
+            else:
+                # No commits, check for staged changes
+                status = run_cmd("git status --short", check=False)
+                if status:
+                    run_cmd(f'git add -A && git commit -m "Issue #{issue_number}: {title}"')
+                    create_pull_request(issue_number, branch_name, title)
+                    return True
+                else:
+                    # No work done, just cancel
+                    print("⚠️ No work completed. Cancelling branch...")
+                    run_cmd(f"git checkout main && git branch -D {branch_name}", check=False)
+                    return False
         elif user_input != 'yes':
             print("Continuing with Claude...")
 
@@ -279,6 +460,11 @@ def main():
         "--repo",
         type=str,
         help="Repository (owner/repo format). Auto-detected if not provided."
+    )
+    parser.add_argument(
+        "--autonomous",
+        action="store_true",
+        help="Autonomous mode: work on one issue and exit (for GitHub Actions). Interactive mode loops through issues."
     )
 
     args = parser.parse_args()
@@ -331,16 +517,19 @@ def main():
             full_issue = get_issue_details(issue['number'])
 
             # Work on it
-            success = work_on_issue(full_issue)
+            success = work_on_issue(full_issue, autonomous=args.autonomous)
 
             if not success:
                 print("⚠️ Issue work incomplete, moving to next...")
                 continue
 
-            # Ask if should continue to next issue
-            next_issue = input("\n🔄 Work on next issue? (yes/no): ").strip().lower()
-            if next_issue != 'yes':
+            # Ask if should continue to next issue (skip in quiet mode)
+            if args.autonomous:
                 break
+            else:
+                next_issue = input("\n🔄 Work on next issue? (yes/no): ").strip().lower()
+                if next_issue != 'yes':
+                    break
 
     except KeyboardInterrupt:
         print("\n\n⏸️  Agent paused by user")
