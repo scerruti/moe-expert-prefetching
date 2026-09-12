@@ -408,8 +408,12 @@ def work_on_issue(issue: dict, autonomous: bool = False) -> bool:
     # Start conversation with Claude
     conversation_history = []
 
+    claude_iterations = 0
+    max_autonomous_iterations = 3  # Prevent infinite loops in autonomous mode
+
     while True:
         result = ask_claude(issue, conversation_history, autonomous=autonomous)
+        claude_iterations += 1
 
         if result["status"] == "ready_for_pr":
             # Verify git changes
@@ -427,9 +431,27 @@ def work_on_issue(issue: dict, autonomous: bool = False) -> bool:
             else:
                 print("⚠️ No changes detected. Please verify implementation.")
 
-        # Ask user if ready to continue or submit (unless quiet mode)
+        # Check if work is done (autonomous mode: auto-commit after Claude finishes or max iterations)
+        if autonomous and claude_iterations >= max_autonomous_iterations:
+            status = run_cmd("git status --short", check=False)
+            if status:
+                print(f"\n✅ Autonomous mode: Auto-committing changes after {claude_iterations} iterations")
+                print(f"📝 Changes made:\n{status}")
+
+                # Commit changes
+                commit_msg = f"Issue #{issue_number}: {title}\n\nImplementation complete. All acceptance criteria met."
+                run_cmd(f'git add -A && git commit -m "{commit_msg}"')
+
+                # Create PR
+                create_pull_request(issue_number, branch_name, title)
+                return True
+            else:
+                print("⚠️ No changes detected after exploration. Exiting.")
+                return False
+
+        # Ask user if ready to continue or submit (unless autonomous mode)
         if autonomous:
-            user_input = "yes"  # Auto-continue in quiet mode
+            user_input = "yes"  # Auto-continue in autonomous mode
         else:
             user_input = input("\n⏭️  Continue working? (yes/no/submit, default=yes): ").strip().lower() or "yes"
 
