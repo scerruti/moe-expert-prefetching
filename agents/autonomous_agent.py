@@ -509,10 +509,19 @@ def main():
     parser.add_argument(
         "--autonomous",
         action="store_true",
-        help="Autonomous mode: work on one issue and exit (for GitHub Actions). Interactive mode loops through issues."
+        help="Autonomous mode: no user prompts, auto-commit after work completes."
+    )
+    parser.add_argument(
+        "--single",
+        action="store_true",
+        help="Process only one issue and exit (useful for testing). Can combine with --autonomous."
     )
 
     args = parser.parse_args()
+
+    # --single implies no interactive loop
+    if args.single:
+        args.autonomous = True
 
     # Build label filter
     if args.phase:
