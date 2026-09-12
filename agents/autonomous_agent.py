@@ -243,21 +243,30 @@ def ask_claude(issue: dict, conversation_history: list, autonomous: bool = False
 
     acceptance_criteria = extract_acceptance_criteria(body)
 
+    # Load condensed agent context
+    agent_context_path = "agents/docs/AGENT_CONTEXT.md"
+    try:
+        agent_context = open(agent_context_path).read()
+    except FileNotFoundError:
+        agent_context = "(Context file not found - run: python agents/docs/generate_agent_context.py)"
+
     # Add context to conversation
-    system_prompt = """You are an expert software engineer working on a research project.
+    system_prompt = f"""You are an expert software engineer working on a research project.
 Your task is to work on GitHub issues by:
 
-1. **Review project context first** (CRITICAL):
-   - Read SYSTEM_DESIGN.md to understand the 5-phase roadmap
-   - Read phase_N/docs/STATUS.md and phase_N/docs/CHECKLIST.md for detailed requirements
-   - Review phase_N/docs/ARCHITECTURE.md for implementation guidance
-   - This ensures you understand where files should go and what they should contain
-
+1. **Review provided project context** (See below)
 2. Understanding the issue requirements and acceptance criteria
 3. Implementing the code changes needed
 4. Running tests and validation
 5. Creating proper git commits
 6. Ensuring all acceptance criteria are met
+
+---
+## PROJECT CONTEXT (Condensed for Efficiency)
+
+{agent_context}
+
+---"""
 
 CRITICAL: You have access to two tools:
 
