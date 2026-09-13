@@ -582,6 +582,12 @@ def main():
             # Work on it
             success = work_on_issue(full_issue, autonomous=args.autonomous)
 
+            # --single is a hard stop after the first issue, even if that issue
+            # does not fully complete.
+            if args.single:
+                print("🧪 --single mode: stopping after Issue #" + str(issue['number']))
+                break
+
             if not success:
                 print("⚠️ Issue work incomplete, moving to next...")
                 continue
