@@ -243,7 +243,7 @@ def process_tool_calls(response, conversation_history: list) -> tuple:
 
     return assistant_message, tool_results
 
-def ask_claude(issue: dict, conversation_history: list, autonomous: bool = False) -> dict:
+def ask_claude(issue: dict, conversation_history: list, autonomous: bool = False, force_action: bool = False) -> dict:
     """Ask Claude to work on the issue."""
     issue_number = issue['number']
     title = issue['title']
@@ -327,7 +327,15 @@ When you're done implementing all acceptance criteria, indicate that the issue i
 Start by exploring the repository structure and understanding what needs to be done."""
     else:
         if autonomous:
-            user_message = "Continue working on the issue. Show progress and let me know when all acceptance criteria are met."
+            if force_action:
+                user_message = (
+                    "You have already explored the repository, but no concrete implementation changes were made. "
+                    "Now implement the missing work described in the issue directly. "
+                    "Create or update the required files, configuration, or directory structure, run validation, "
+                    "and report the actual changes you made."
+                )
+            else:
+                user_message = "Continue working on the issue. Make real progress, create or update files when needed, and let me know when all acceptance criteria are met."
         else:
             user_message = input("📝 Your feedback (or 'done' to submit PR, default=continue): ").strip() or "Continue working"
             if user_message.lower() == 'done':
@@ -447,10 +455,12 @@ def work_on_issue(issue: dict, autonomous: bool = False) -> bool:
     conversation_history = []
 
     claude_iterations = 0
-    max_autonomous_iterations = 3  # Prevent infinite loops in autonomous mode
+    max_autonomous_iterations = 5
+    force_action = False
+    no_change_rounds = 0
 
     while True:
-        result = ask_claude(issue, conversation_history, autonomous=autonomous)
+        result = ask_claude(issue, conversation_history, autonomous=autonomous, force_action=force_action)
         claude_iterations += 1
 
         if result["status"] == "ready_for_pr":
@@ -469,23 +479,29 @@ def work_on_issue(issue: dict, autonomous: bool = False) -> bool:
             else:
                 print("⚠️ No changes detected. Please verify implementation.")
 
-        # Check if work is done (autonomous mode: auto-commit after Claude finishes or max iterations)
-        if autonomous and claude_iterations >= max_autonomous_iterations:
-            status = run_cmd("git status --short", check=False)
-            if status:
+        status = run_cmd("git status --short", check=False)
+
+        if status:
+            no_change_rounds = 0
+            if autonomous and claude_iterations >= max_autonomous_iterations:
                 print(f"\n✅ Autonomous mode: Auto-committing changes after {claude_iterations} iterations")
                 print(f"📝 Changes made:\n{status}")
 
-                # Commit changes
                 commit_msg = f"Issue #{issue_number}: {title}\n\nImplementation complete. All acceptance criteria met."
                 run_cmd(f'git add -A && git commit -m "{commit_msg}"')
 
-                # Create PR
                 create_pull_request(issue_number, branch_name, title)
                 return True
-            else:
-                print("⚠️ No changes detected after exploration. Exiting.")
-                return False
+        else:
+            no_change_rounds += 1
+            if autonomous:
+                if not force_action:
+                    print("⚠️ No changes detected after exploration. Escalating to a direct implementation prompt.")
+                    force_action = True
+                    continue
+                if no_change_rounds >= 2:
+                    print("⚠️ No changes detected after direct implementation attempts. Exiting.")
+                    return False
 
         # Ask user if ready to continue or submit (unless autonomous mode)
         if autonomous:

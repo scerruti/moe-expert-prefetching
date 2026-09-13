@@ -1,0 +1,35 @@
+# Core runtime dependencies for Speculative Expert Prefetching (Phase 1)
+#
+# Install with:
+#   python3 -m venv venv
+#   source venv/bin/activate
+#   pip install -r requirements.txt
+#
+# NOTE on PyTorch + CUDA:
+#   The default PyPI wheels ship with CUDA support on Linux.
+#   For a specific CUDA toolkit (e.g. cu121) install torch first via:
+#     pip install torch --index-url https://download.pytorch.org/whl/cu121
+#   then run `pip install -r requirements.txt`.
+
+# --- Deep learning runtime ---
+torch>=2.2.0
+accelerate>=0.30.0
+safetensors>=0.4.0
+
+# --- Models, tokenizers, datasets ---
+transformers>=4.40.0
+tokenizers>=0.19.0
+datasets>=2.19.0
+huggingface_hub>=0.23.0
+sentencepiece>=0.2.0
+protobuf>=4.25.0
+
+# --- Columnar telemetry storage (Parquet) ---
+pyarrow>=15.0.0
+numpy>=1.26.0
+pandas>=2.2.0
+
+# --- Progress reporting / utilities ---
+tqdm>=4.66.0
+psutil>=5.9.0
+PyYAML>=6.0.0
