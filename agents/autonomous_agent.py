@@ -226,42 +226,40 @@ def ensure_git_trackable_directories(issue_body: str) -> list[str]:
 def extract_referenced_paths(issue_body: str) -> list[str]:
     """Extract likely file or directory paths mentioned in issue text.
 
-    This intentionally ignores ordinary prose tokens that merely contain slashes, such as
-    "yes/no/feedback" or "done/feedback", while still capturing real repository artifacts
-    like "phase_1/scripts/verify_environment.py" or "src/app".
+    We intentionally ignore ordinary prose fragments such as "yes/no/feedback" and
+    version strings like "3.10" so validation only checks actual repository artifacts.
     """
-    matches = []
+
+    def is_version_like(candidate: str) -> bool:
+        return bool(re.fullmatch(r'\d+(?:\.\d+)+', candidate))
 
     def is_probably_repo_path(candidate: str) -> bool:
-        candidate = candidate.strip('/()	[]{}<>"\'')
+        candidate = candidate.strip('/()\t[]{}<>"\'')
         if not candidate or candidate.startswith(('http://', 'https://', '#', '.', '@')):
+            return False
+        if is_version_like(candidate):
             return False
 
         if candidate.count('/') == 0:
-            # A bare token is only a valid path if it looks like a file name, e.g. 'README.md'.
             return bool(re.search(r'\.[A-Za-z0-9]+$', candidate))
 
-        # Slash-delimited paths are valid if they look like folder/file structures and not
-        # generic prose fragments such as 'yes/no/feedback'.
-        parts = [p for p in candidate.split('/') if p]
+        parts = [part for part in candidate.split('/') if part]
         if len(parts) < 2:
             return False
 
+        # Reject common prose phrases that merely contain slashes.
         if any(part.lower() in {'yes', 'no', 'done', 'feedback'} for part in parts[:-1]):
             return False
 
-        # Reject overly generic prose phrases like "yes/no/feedback" by requiring at least
-        # one path-like segment to include a dot or a directory-like prefix that implies a repo artifact.
-        if len(parts) >= 3:
-            last = parts[-1]
-            if last.lower() in {'feedback', 'status', 'result'}:
-                return False
+        if parts[-1].lower() in {'feedback', 'result', 'status'}:
+            return False
 
-        # Paths should have at least one segment that looks like a filesystem artifact.
         return any(
             re.search(r'\.[A-Za-z0-9]+$', part) or part in {'src', 'scripts', 'docs', 'data', 'phase_1', 'phase_2'}
             for part in parts
         )
+
+    matches = []
 
     for line in issue_body.split('\n'):
         stripped = line.strip()
