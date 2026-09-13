@@ -266,7 +266,7 @@ Your task is to work on GitHub issues by:
 
 {agent_context}
 
----"""
+---
 
 CRITICAL: You have access to two tools:
 
