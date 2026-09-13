@@ -3,7 +3,7 @@
 This is a condensed, agent-focused version of project documentation.
 **Generated automatically** - do not edit directly.
 
-To update: Run `python agents/docs/generate_agent_context.py` when docs change.
+To update: Run `python agents/scripts/generate_agent_context.py` when docs change.
 
 ---
 
@@ -49,10 +49,6 @@ To update: Run `python agents/docs/generate_agent_context.py` when docs change.
 **Primary Evaluation Metrics:**
 
 * **Prediction Recall@$(k+m)$:** Fraction of actual
-
----
-
-## Issue Reference Guide
 
 ---
 
@@ -125,4 +121,4 @@ python agents/autonomous_agent.py --phase 1 --single
 ---
 
 **Last Updated**: Auto-generated from source documentation.
-**Next Update**: Run `python agents/docs/generate_agent_context.py`
+**Next Update**: Run `python agents/scripts/generate_agent_context.py`

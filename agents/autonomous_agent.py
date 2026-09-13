@@ -95,7 +95,7 @@ def get_issue_details(issue_number: int) -> dict:
     return json.loads(output)
 
 def create_feature_branch(issue_number: int, title: str) -> str:
-    """Create feature branch from issue title, or reuse if exists."""
+    """Create feature branch from issue title, or reuse if it has unique work."""
     # Convert title to branch name (lowercase, hyphens, no special chars)
     branch_name = re.sub(r'[^a-z0-9\s-]', '', title.lower())
     branch_name = re.sub(r'\s+', '-', branch_name)[:40]  # Limit length
@@ -104,8 +104,16 @@ def create_feature_branch(issue_number: int, title: str) -> str:
     # Check if branch already exists
     existing = run_cmd(f"git rev-parse --verify {branch_name}", check=False)
     if existing:
-        print(f"\n📦 Reusing existing branch: {branch_name}")
-        run_cmd(f"git checkout {branch_name}")
+        # If the branch is identical to main (no unique commits), recreate it.
+        branch_commits = run_cmd(f"git rev-list --count main..{branch_name}", check=False)
+        if branch_commits and branch_commits != "0":
+            print(f"\n📦 Reusing existing branch: {branch_name}")
+            run_cmd(f"git checkout {branch_name}")
+        else:
+            print(f"\n📦 Recreating stale branch: {branch_name}")
+            run_cmd(f"git checkout main", check=False)
+            run_cmd(f"git branch -D {branch_name}", check=False)
+            run_cmd(f"git checkout -b {branch_name}")
     else:
         print(f"\n📦 Creating branch: {branch_name}")
         run_cmd(f"git checkout -b {branch_name}")
@@ -244,11 +252,11 @@ def ask_claude(issue: dict, conversation_history: list, autonomous: bool = False
     acceptance_criteria = extract_acceptance_criteria(body)
 
     # Load condensed agent context
-    agent_context_path = "agents/docs/AGENT_CONTEXT.md"
+    agent_context_path = "agents/context/AGENT_CONTEXT.md"
     try:
         agent_context = open(agent_context_path).read()
     except FileNotFoundError:
-        agent_context = "(Context file not found - run: python agents/docs/generate_agent_context.py)"
+        agent_context = "(Context file not found - run: python agents/scripts/generate_agent_context.py)"
 
     # Add context to conversation
     system_prompt = f"""You are an expert software engineer working on a research project.
@@ -384,10 +392,15 @@ Start by exploring the repository structure and understanding what needs to be d
     }
 
 def create_pull_request(issue_number: int, branch_name: str, title: str) -> str:
-    """Create pull request for the issue."""
+    """Push the branch and create a pull request for the issue."""
     print(f"\n🚀 Creating pull request...")
 
     repo = get_repo_info()
+
+    # Push branch before PR creation so GitHub has a valid head ref.
+    print(f"\n📤 Pushing branch: {branch_name}")
+    run_cmd(f"git push -u origin {branch_name}")
+
     pr_body = f"""Closes #{issue_number}
 
 ## Summary
@@ -400,7 +413,7 @@ Implemented work for issue #{issue_number}.
 
 Generated with Claude Autonomous Agent"""
 
-    cmd = f'''gh pr create --repo {repo} --title "{title}" --body "{pr_body}" --head {branch_name}'''
+    cmd = f'''gh pr create --repo {repo} --title "{title}" --body "{pr_body}" --head {branch_name} --base main'''
     output = run_cmd(cmd)
 
     # Extract PR URL

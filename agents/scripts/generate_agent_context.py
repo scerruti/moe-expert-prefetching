@@ -2,13 +2,14 @@
 """
 Generate condensed AGENT_CONTEXT.md from project documentation.
 
-This script reads the main documentation files and extracts key information
-needed by the autonomous agent, creating a focused, efficient context document.
+This script reads the stable project documentation files and extracts the
+core project context needed by the autonomous agent, creating a focused,
+efficient context document.
 
 Usage:
-    python agents/docs/generate_agent_context.py
+    python agents/scripts/generate_agent_context.py
 
-This should be run whenever SYSTEM_DESIGN.md or phase_*/docs/*.md files change.
+This should be run whenever SYSTEM_DESIGN.md or top-level project docs change.
 """
 
 import re
@@ -19,10 +20,8 @@ def extract_phase_info():
     """Extract phase structure and key files from documentation."""
     phases = {}
 
-    # Read SYSTEM_DESIGN.md for phase overview
     try:
         design = Path("SYSTEM_DESIGN.md").read_text()
-        # Extract phase descriptions from "## N. Phase X:" sections
         phase_sections = re.findall(r'### Phase (\d+)[:\s]+([^\n]+)\n+(.*?)(?=### Phase|\Z)', design, re.DOTALL)
         for phase_num, title, content in phase_sections:
             phases[int(phase_num)] = {
@@ -35,37 +34,6 @@ def extract_phase_info():
     return phases
 
 
-def extract_issue_info():
-    """Extract issue requirements from GitHub issues documentation."""
-    issues = {}
-
-    # Read phase_1/docs/GITHUB_ISSUES.md for issue details
-    try:
-        issues_doc = Path("phase_1/docs/GITHUB_ISSUES.md").read_text()
-
-        # Extract issue blocks
-        issue_blocks = re.findall(
-            r'### Issue #(\d+)[:\s]+([^\n]+)\n+(.*?)(?=### Issue|\Z)',
-            issues_doc,
-            re.DOTALL
-        )
-
-        for issue_num, title, content in issue_blocks:
-            # Extract files to create and acceptance criteria
-            files = re.findall(r'- Create[:\s]+`([^`]+)`', content)
-            acceptance = re.findall(r'- (\w.*?)(?:\n|$)', content)[:3]
-
-            issues[int(issue_num)] = {
-                'title': title.strip(),
-                'files': files,
-                'acceptance': acceptance
-            }
-    except FileNotFoundError:
-        pass
-
-    return issues
-
-
 def extract_directory_structure():
     """Extract expected directory structure from documentation."""
     structure = {}
@@ -73,7 +41,6 @@ def extract_directory_structure():
     try:
         status = Path("phase_1/docs/STATUS.md").read_text()
 
-        # Extract What's Missing section which shows expected structure
         missing = re.search(r'### ❌ Code\n```\n(.*?)\n```', status, re.DOTALL)
         if missing:
             structure['code'] = missing.group(1).strip()
@@ -91,7 +58,6 @@ def generate_context():
     """Generate the condensed agent context document."""
 
     phases = extract_phase_info()
-    issues = extract_issue_info()
     structure = extract_directory_structure()
 
     content = """# Agent Context for Autonomous Issue Processing
@@ -99,7 +65,7 @@ def generate_context():
 This is a condensed, agent-focused version of project documentation.
 **Generated automatically** - do not edit directly.
 
-To update: Run `python agents/docs/generate_agent_context.py` when docs change.
+To update: Run `python agents/scripts/generate_agent_context.py` when docs change.
 
 ---
 
@@ -115,36 +81,14 @@ To update: Run `python agents/docs/generate_agent_context.py` when docs change.
 
 """
 
-    # Add phase overviews
     for phase_num in sorted(phases.keys()):
         phase = phases[phase_num]
         content += f"### Phase {phase_num}: {phase['title']}\n"
         content += f"{phase['description']}\n\n"
 
-    # Add issue-specific guidance
-    content += "---\n\n## Issue Reference Guide\n\n"
-
-    for issue_num in sorted(issues.keys()):
-        issue = issues[issue_num]
-        content += f"### Issue #{issue_num}: {issue['title']}\n\n"
-
-        if issue['files']:
-            content += "**Files to Create**:\n"
-            for f in issue['files']:
-                content += f"- `{f}`\n"
-            content += "\n"
-
-        if issue['acceptance']:
-            content += "**Acceptance Criteria**:\n"
-            for criteria in issue['acceptance']:
-                content += f"- {criteria}\n"
-            content += "\n"
-
-    # Add directory structure
     content += "---\n\n## Expected Directory Structure\n\n"
     content += "```\nphase_1/\n├── scripts/\n│   ├── verify_environment.py\n│   ├── data_collection.py\n│   ├── validation.py\n│   └── dataset_loading.py\n├── docs/\n│   ├── ARCHITECTURE.md\n│   ├── STATUS.md\n│   └── CHECKLIST.md\n└── data/\n    ├── gsm8k/\n    ├── mbpp/\n    ├── processed/\n    └── validation_reports/\n```\n\n"
 
-    # Add key patterns
     content += """---
 
 ## Key Patterns for Implementation
@@ -194,7 +138,7 @@ python agents/autonomous_agent.py --phase 1 --single
 ---
 
 **Last Updated**: Auto-generated from source documentation.
-**Next Update**: Run `python agents/docs/generate_agent_context.py`
+**Next Update**: Run `python agents/scripts/generate_agent_context.py`
 """
 
     return content
@@ -204,7 +148,7 @@ def main():
     """Generate and save the agent context document."""
     context = generate_context()
 
-    output_path = Path("agents/docs/AGENT_CONTEXT.md")
+    output_path = Path("agents/context/AGENT_CONTEXT.md")
     output_path.write_text(context)
 
     print(f"✅ Generated {output_path}")
