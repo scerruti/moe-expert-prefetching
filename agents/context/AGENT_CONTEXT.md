@@ -76,6 +76,12 @@ phase_1/
 
 ## Key Patterns for Implementation
 
+### Source of Truth
+- The GitHub issue body and the current repository state are the authoritative source of what needs to be implemented.
+- Local design docs such as `SYSTEM_DESIGN.md`, `phase_1/docs/ARCHITECTURE.md`, and `README.md` provide architecture and background context only.
+- Do not treat local status/checklist/review docs as current task truth.
+- Do not infer that a task is complete just because a design doc mentions it.
+
 ### File Creation
 - Use `write_file()` tool to create Python scripts
 - Include proper docstrings and type hints

@@ -35,23 +35,22 @@ def extract_phase_info():
 
 
 def extract_directory_structure():
-    """Extract expected directory structure from documentation."""
-    structure = {}
-
-    try:
-        status = Path("phase_1/docs/STATUS.md").read_text()
-
-        missing = re.search(r'### ❌ Code\n```\n(.*?)\n```', status, re.DOTALL)
-        if missing:
-            structure['code'] = missing.group(1).strip()
-
-        missing_data = re.search(r'### ❌ Data Outputs\n```\n(.*?)\n```', status, re.DOTALL)
-        if missing_data:
-            structure['data'] = missing_data.group(1).strip()
-    except FileNotFoundError:
-        pass
-
-    return structure
+    """Return the stable repository layout without relying on mutable local status docs."""
+    return {
+        'code': """phase_1/
+├── docs/
+├── scripts/
+├── data/
+└── README.md
+""".strip(),
+        'data': """data/
+├── phase_1/
+├── gsm8k/
+├── mbpp/
+├── processed/
+└── validation_reports/
+""".strip()
+    }
 
 
 def generate_context():
@@ -92,6 +91,12 @@ To update: Run `python agents/scripts/generate_agent_context.py` when docs chang
     content += """---
 
 ## Key Patterns for Implementation
+
+### Source of Truth
+- The GitHub issue body and the current repository state are the authoritative source of what needs to be implemented.
+- Local design docs such as `SYSTEM_DESIGN.md`, `phase_1/docs/ARCHITECTURE.md`, and `README.md` provide architecture and background context only.
+- Do not treat local status/checklist/review docs as current task truth.
+- Do not infer that a task is complete just because a design doc mentions it.
 
 ### File Creation
 - Use `write_file()` tool to create Python scripts

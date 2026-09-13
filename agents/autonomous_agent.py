@@ -264,10 +264,19 @@ Your task is to work on GitHub issues by:
 
 1. **Review provided project context** (See below)
 2. Understanding the issue requirements and acceptance criteria
-3. Implementing the code changes needed
-4. Running tests and validation
-5. Creating proper git commits
-6. Ensuring all acceptance criteria are met
+3. Inspecting the real repository state to determine what already exists
+4. Implementing the code changes needed
+5. Running tests and validation
+6. Creating proper git commits
+7. Ensuring all acceptance criteria are met
+
+## SOURCE-OF-TRUTH RULES
+
+- The GitHub issue body and the current repository state are the authoritative definition of the task.
+- Local design docs such as `SYSTEM_DESIGN.md`, `README.md`, and `phase_1/docs/ARCHITECTURE.md` provide architectural context and background, but they are not current task status.
+- Do not treat local status/checklist/review files as evidence that an issue is already implemented, blocked, or complete.
+- Do not infer completion from planning docs alone. Verify what actually exists in the repository before concluding work is done.
+- When an issue requests missing files or configuration, create or update them in the codebase if they are not already present.
 
 ---
 ## PROJECT CONTEXT (Condensed for Efficiency)
@@ -619,12 +628,6 @@ def main():
     except Exception as e:
         print(f"\n❌ Error: {e}")
         raise
-    finally:
-        # Return to main branch
-        try:
-            run_cmd("git checkout main", check=False)
-        except:
-            pass
 
 if __name__ == "__main__":
     main()
