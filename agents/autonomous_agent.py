@@ -234,6 +234,9 @@ def extract_referenced_paths(issue_body: str) -> list[str]:
         for match in re.findall(r'([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+|[A-Za-z0-9_.-]+\.[A-Za-z0-9_.-]+)', stripped):
             if match.startswith(('http://', 'https://', '#', '.', '(', '[')):
                 continue
+            # Ignore version strings such as "3.10" that appear in prose but are not repo artifacts.
+            if re.fullmatch(r'[0-9]+(?:\.[0-9]+)+', match):
+                continue
             if match.count('/') == 0 and not re.search(r'\.[A-Za-z0-9]+$', match):
                 continue
             matches.append(match.strip('/'))
