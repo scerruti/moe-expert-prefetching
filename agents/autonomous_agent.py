@@ -154,6 +154,131 @@ def extract_acceptance_criteria(issue_body: str) -> list:
 
     return criteria if criteria else ["Issue resolved and PR passes review"]
 
+
+def extract_directory_requirements(issue_body: str) -> list[str]:
+    """Identify directory-like requirements in an issue so they can be normalized into trackable artifacts."""
+    directory_requirements = []
+    fallback_names = []
+
+    for line in issue_body.split('\n'):
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        lower = stripped.lower()
+        if 'directory' not in lower and 'structure' not in lower and 'create' not in lower and 'add' not in lower:
+            continue
+
+        # Capture explicit paths such as phase_1/scripts or data/phase_1
+        explicit_matches = re.findall(r'([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+)', stripped)
+        for match in explicit_matches:
+            if match.startswith(('.', '#', 'http')):
+                continue
+            if match.count('/') >= 1:
+                directory_requirements.append(match.strip('/'))
+
+        # Fallback for simple directives like "Create data directory" or "Create phase_1/scripts directory"
+        for prefix in ['create ', 'add ', 'set up ']:
+            if stripped.lower().startswith(prefix):
+                remainder = stripped[len(prefix):].strip()
+                if not remainder:
+                    continue
+                token = remainder.split()[0]
+                if token.startswith(('.', '#', 'http')):
+                    continue
+                if '.' in token and token.count('/') == 0:
+                    continue
+                fallback_names.append(token.strip('/'))
+
+    # Keep a small, generic set of directory-like requirements without overmatching file names.
+    combined = directory_requirements + fallback_names
+    deduped = []
+    seen = set()
+    for item in combined:
+        if item and item not in seen:
+            deduped.append(item)
+            seen.add(item)
+
+    return deduped
+
+
+def ensure_git_trackable_directories(issue_body: str) -> list[str]:
+    """Create repository artifacts for directory-only issue requirements so Git can track the requested structure."""
+    created = []
+
+    for directory in extract_directory_requirements(issue_body):
+        os.makedirs(directory, exist_ok=True)
+        contents = os.listdir(directory)
+
+        if not contents:
+            placeholder = os.path.join(directory, 'README.md')
+            with open(placeholder, 'w', encoding='utf-8') as f:
+                f.write(
+                    f"# {directory}\n\n"
+                    "This directory was created to satisfy a repository structure requirement in the issue.\n"
+                    "The directory itself is not tracked by Git; this placeholder file makes the requested structure trackable.\n"
+                )
+            created.append(placeholder)
+
+    return created
+
+
+def extract_referenced_paths(issue_body: str) -> list[str]:
+    """Extract likely file or directory paths mentioned in issue text."""
+    matches = []
+    for line in issue_body.split('\n'):
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        for match in re.findall(r'([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+|[A-Za-z0-9_.-]+\.[A-Za-z0-9_.-]+)', stripped):
+            if match.startswith(('http://', 'https://', '#', '.', '(', '[')):
+                continue
+            if match.count('/') == 0 and not re.search(r'\.[A-Za-z0-9]+$', match):
+                continue
+            matches.append(match.strip('/'))
+
+    deduped = []
+    seen = set()
+    for path in matches:
+        if path and path not in seen:
+            deduped.append(path)
+            seen.add(path)
+
+    return deduped
+
+
+def validate_issue_requirements(issue_body: str) -> dict:
+    """Check whether explicit repository artifacts referenced in the issue are actually present."""
+    criteria = extract_acceptance_criteria(issue_body)
+    referenced_paths = extract_referenced_paths(issue_body)
+    missing_paths = []
+
+    for path in referenced_paths:
+        if path.startswith(('phase-', 'blocker/', 'good-first-issue', 'label')):
+            continue
+
+        if not os.path.exists(path):
+            missing_paths.append(path)
+
+    if not missing_paths and not referenced_paths:
+        return {
+            "valid": True,
+            "criteria": criteria,
+            "missing_paths": [],
+            "message": "Issue does not reference explicit repo artifacts; manual review is required."
+        }
+
+    return {
+        "valid": len(missing_paths) == 0,
+        "criteria": criteria,
+        "missing_paths": missing_paths,
+        "message": (
+            "Missing required repository artifacts:" if missing_paths else "Explicitly referenced artifacts are present."
+        )
+    }
+
+
 def handle_write_file(path: str, content: str) -> str:
     """Handle write_file tool invocation."""
     try:
@@ -302,6 +427,7 @@ IMPORTANT:
 - For creating/modifying files: ALWAYS use write_file tool, NEVER bash echo
 - Run tests and git operations with bash
 - Never create empty directories—they're created automatically when files are written
+- If an issue requests a directory structure, make that directory trackable by adding a placeholder file such as `README.md` or `.gitkeep` if the directory would otherwise be empty.
 
 Follow the repository's coding standards and conventions.
 When you're done implementing all acceptance criteria, indicate that the issue is ready for PR submission."""
@@ -446,6 +572,10 @@ def work_on_issue(issue: dict, autonomous: bool = False) -> bool:
     # Start conversation with Claude
     conversation_history = []
 
+    placeholder_paths = ensure_git_trackable_directories(issue['body'])
+    if placeholder_paths:
+        print(f"\n📁 Normalized directory-only requirements into trackable placeholders:\n  - {'\n  - '.join(placeholder_paths)}")
+
     claude_iterations = 0
     max_autonomous_iterations = 3  # Prevent infinite loops in autonomous mode
 
@@ -453,11 +583,26 @@ def work_on_issue(issue: dict, autonomous: bool = False) -> bool:
         result = ask_claude(issue, conversation_history, autonomous=autonomous)
         claude_iterations += 1
 
+        validation = validate_issue_requirements(issue['body'])
+        if not validation["valid"]:
+            print(f"\n⚠️ Acceptance-criteria validation failed. Missing referenced artifacts: {', '.join(validation['missing_paths'])}")
+            if autonomous:
+                print("   Continuing another iteration so Claude can address the missing artifacts.")
+            else:
+                user_input = input("\n🔁 Missing artifacts remain. Keep working? (yes/no, default=yes): ").strip().lower() or "yes"
+                if user_input != 'yes':
+                    print("⚠️ Stopping before PR creation because acceptance criteria are not yet satisfied.")
+                    return False
+
         if result["status"] == "ready_for_pr":
             # Verify git changes
             status = run_cmd("git status --short", check=False)
             if status:
                 print(f"\n📝 Changes made:\n{status}")
+
+                if not validation["valid"]:
+                    print("⚠️ Cannot create PR yet: the issue still references missing repository artifacts.")
+                    return False
 
                 # Commit changes
                 commit_msg = f"Issue #{issue_number}: {title}\n\nImplementation complete with all acceptance criteria met."
@@ -473,6 +618,10 @@ def work_on_issue(issue: dict, autonomous: bool = False) -> bool:
         if autonomous and claude_iterations >= max_autonomous_iterations:
             status = run_cmd("git status --short", check=False)
             if status:
+                if not validation["valid"]:
+                    print("⚠️ Cannot auto-commit PR yet: the issue still references missing repository artifacts.")
+                    return False
+
                 print(f"\n✅ Autonomous mode: Auto-committing changes after {claude_iterations} iterations")
                 print(f"📝 Changes made:\n{status}")
 
@@ -494,6 +643,10 @@ def work_on_issue(issue: dict, autonomous: bool = False) -> bool:
             user_input = input("\n⏭️  Continue working? (yes/no/submit, default=yes): ").strip().lower() or "yes"
 
         if user_input == 'submit' or user_input == 'no':
+            if not validation["valid"]:
+                print("⚠️ Cannot create a PR until the issue's referenced artifacts exist in the repository.")
+                return False
+
             # Check if there are actual commits on this branch
             commits = run_cmd(f"git log main..HEAD --oneline", check=False)
             if commits:
