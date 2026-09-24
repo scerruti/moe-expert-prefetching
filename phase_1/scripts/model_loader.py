@@ -34,6 +34,14 @@ class ModelConfig:
             "num_experts": 128,
             "top_k": 6,
             "is_vision": True,
+            "note": "Vision-language model - requires custom loading. Use qwen3-moe for text-only.",
+        },
+        "qwen3-moe": {
+            "model_id": "Qwen/Qwen3-1B-MoE-Instruct",
+            "router_gate_path": "mlp.gate",
+            "num_experts": 64,
+            "top_k": 6,
+            "is_vision": False,
         },
         "mixtral-8x7b": {
             "model_id": "mistralai/Mixtral-8x7B-Instruct-v0.1",
