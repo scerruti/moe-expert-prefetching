@@ -197,9 +197,47 @@ class GSM8KLoader:
                 splits[split] = 0
         return splits
 
+    def count_tokens(self, examples: List[Dict[str, Any]], tokenizer: Any) -> Dict[str, Any]:
+        """Count tokens for all examples."""
+        question_tokens = []
+        answer_tokens = []
+
+        for example in examples:
+            q_ids = tokenizer.encode(example["question"], add_special_tokens=False)
+            a_ids = tokenizer.encode(example["reference_answer"], add_special_tokens=False)
+
+            question_tokens.append(len(q_ids))
+            answer_tokens.append(len(a_ids))
+
+        total_tokens = sum(question_tokens) + sum(answer_tokens)
+
+        return {
+            "num_examples": len(examples),
+            "total_question_tokens": sum(question_tokens),
+            "total_answer_tokens": sum(answer_tokens),
+            "total_tokens": total_tokens,
+            "avg_question_tokens": sum(question_tokens) / len(question_tokens) if question_tokens else 0,
+            "avg_answer_tokens": sum(answer_tokens) / len(answer_tokens) if answer_tokens else 0,
+            "max_question_tokens": max(question_tokens) if question_tokens else 0,
+            "max_answer_tokens": max(answer_tokens) if answer_tokens else 0,
+        }
+
+    @staticmethod
+    def estimate_memory(token_counts: Dict[str, Any], model_hidden_size: int = 4096) -> Dict[str, float]:
+        """Estimate memory footprint for storing tokens."""
+        total_tokens = token_counts["total_tokens"]
+        embeddings_gb = (total_tokens * model_hidden_size * 4) / (1024**3)
+        activations_gb = (total_tokens * model_hidden_size * 2) / (1024**3)
+
+        return {
+            "embeddings_gb": embeddings_gb,
+            "activations_gb": activations_gb,
+            "total_estimated_gb": embeddings_gb + activations_gb,
+        }
+
 
 def test_loaders():
-    """Test MBPP loader on 10 examples with token counting and memory estimation."""
+    """Test MBPP and GSM8K loaders with token counting and memory estimation."""
     logging.basicConfig(level=logging.INFO)
 
     try:
@@ -265,7 +303,54 @@ def test_loaders():
         print(f"   - Total: {full_memory['total_estimated_gb']:.2f} GB")
 
     print("\n" + "="*60)
-    print("✅ All acceptance criteria met!")
+    print("✅ MBPP acceptance criteria met!")
+    print("="*60)
+
+    # Test GSM8K
+    print("\n" + "="*60)
+    print("GSM8K Loader - Acceptance Criteria Test")
+    print("="*60)
+
+    gsm8k = GSM8KLoader()
+
+    # Load all examples to verify
+    print("\n1. Loading all GSM8K examples...")
+    train_examples = gsm8k.load(split="train")
+    test_examples_gsm = gsm8k.load(split="test")
+
+    total_gsm = len(train_examples) + len(test_examples_gsm)
+    print(f"✅ Loaded {total_gsm} examples (train: {len(train_examples)}, test: {len(test_examples_gsm)})")
+
+    # Test on 10 examples
+    print("\n2. Testing on 10 examples...")
+    test_examples_gsm_small = gsm8k.load(split="train", num_examples=10)
+    print(f"✅ Loaded {len(test_examples_gsm_small)} test examples")
+
+    # Count tokens
+    print("\n3. Counting tokens...")
+    if tokenizer:
+        token_counts_gsm = gsm8k.count_tokens(test_examples_gsm_small, tokenizer)
+        print(f"✅ Token counts calculated:")
+        print(f"   - Total tokens: {token_counts_gsm['total_tokens']:,}")
+        print(f"   - Avg question tokens: {token_counts_gsm['avg_question_tokens']:.1f}")
+        print(f"   - Avg answer tokens: {token_counts_gsm['avg_answer_tokens']:.1f}")
+        print(f"   - Max question tokens: {token_counts_gsm['max_question_tokens']}")
+
+        # Memory estimation
+        print("\n4. Memory footprint estimation (for 10 examples)...")
+        memory_gsm = GSM8KLoader.estimate_memory(token_counts_gsm)
+        print(f"✅ Memory estimates:")
+        print(f"   - Total: {memory_gsm['total_estimated_gb']:.4f} GB")
+
+        # Scale to full dataset
+        print("\n5. Estimated memory for full dataset...")
+        full_token_counts_gsm = {k: v * (total_gsm / 10) for k, v in token_counts_gsm.items()}
+        full_memory_gsm = GSM8KLoader.estimate_memory(full_token_counts_gsm)
+        print(f"✅ Full dataset memory estimates:")
+        print(f"   - Total: {full_memory_gsm['total_estimated_gb']:.2f} GB")
+
+    print("\n" + "="*60)
+    print("✅ All acceptance criteria met (MBPP + GSM8K)!")
     print("="*60)
 
 
