@@ -3,3 +3,4 @@ transformers==5.17.0
 datasets==5.0.1
 pyarrow==25.0.1
 tqdm==4.70.1
+bitsandbytes>=0.46.1
