@@ -36,13 +36,6 @@ class ModelConfig:
             "is_vision": True,
             "note": "Vision-language model - requires custom loading. Use qwen3-moe for text-only.",
         },
-        "qwen3-moe": {
-            "model_id": "mistralai/Mixtral-8x7B-Instruct-v0.1",
-            "router_gate_path": "block_sparse_moe.gate",
-            "num_experts": 8,
-            "top_k": 2,
-            "is_vision": False,
-        },
         "mixtral-8x7b": {
             "model_id": "mistralai/Mixtral-8x7B-Instruct-v0.1",
             "router_gate_path": "block_sparse_moe.gate",
