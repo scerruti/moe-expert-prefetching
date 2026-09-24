@@ -17,7 +17,7 @@ Usage:
 """
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from typing import Tuple, Optional, Dict, Any
 import logging
 
@@ -64,25 +64,28 @@ class ModelConfig:
 class ModelLoader:
     """Load MoE models with hardware detection and memory optimization."""
 
-    def __init__(self, model_name: str, device: Optional[str] = None, dtype: torch.dtype = torch.float16):
+    def __init__(self, model_name: str, device: Optional[str] = None, dtype: torch.dtype = torch.float16, load_in_4bit: bool = False):
         """
         Initialize loader for a specific model.
 
         Args:
-            model_name: Model identifier (e.g., 'qwen3-vl-30b', 'mixtral-8x7b')
+            model_name: Model identifier (e.g., 'mixtral-8x7b')
             device: 'cuda', 'cpu', or None for auto-detection
             dtype: torch.float16, torch.bfloat16, or torch.float32
+            load_in_4bit: Use 4-bit quantization to reduce memory (requires bitsandbytes)
         """
         self.config = ModelConfig.get(model_name)
         self.model_id = self.config["model_id"]
         self.dtype = dtype
         self.device = device or self._detect_device()
+        self.load_in_4bit = load_in_4bit
         self.model = None
         self.tokenizer = None
 
         logger.info(f"Initialized {model_name} loader")
         logger.info(f"  Device: {self.device}")
         logger.info(f"  Dtype: {dtype}")
+        logger.info(f"  Quantization: {'4-bit' if load_in_4bit else 'none'}")
         logger.info(f"  Experts: {self.config['num_experts']}, Top-K: {self.config['top_k']}")
 
     def _detect_device(self) -> str:
@@ -110,11 +113,25 @@ class ModelLoader:
             padding_side="left",
         )
 
+        load_kwargs = {
+            "trust_remote_code": trust_remote_code,
+            "device_map": self.device,
+        }
+
+        if self.load_in_4bit:
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+            )
+            load_kwargs["quantization_config"] = quantization_config
+        else:
+            load_kwargs["torch_dtype"] = self.dtype
+
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_id,
-            torch_dtype=self.dtype,
-            device_map=self.device,
-            trust_remote_code=trust_remote_code,
+            **load_kwargs
         )
 
         self.model.eval()
