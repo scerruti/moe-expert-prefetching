@@ -444,7 +444,7 @@ class GSM8KGrouper:
                 'category': group.get('category', 'mixed'),
                 'size': group['size'],
                 'percentage': 100 * group['size'] / len(self.samples),
-                'sample_indices': group['samples'][:10],  # First 10 for preview
+                'sample_indices': group['samples'],  # ALL indices
                 'total_sample_count': len(group['samples']),
             }
 

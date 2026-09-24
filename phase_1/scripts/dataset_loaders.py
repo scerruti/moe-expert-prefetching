@@ -19,6 +19,7 @@ from datasets import load_dataset
 from typing import List, Dict, Any, Optional
 import logging
 import sys
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -139,13 +140,16 @@ class GSM8KLoader:
         self.data = None
         logger.info("Initialized GSM8K loader")
 
-    def load(self, split: str = "train", num_examples: Optional[int] = None) -> List[Dict[str, Any]]:
+    def load(self, split: str = "train", num_examples: Optional[int] = None, group_id: Optional[int] = None,
+             group_file: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Load GSM8K dataset.
 
         Args:
             split: "train" or "test"
             num_examples: Limit number of examples (None = load all)
+            group_id: Load specific group (requires group_file)
+            group_file: Path to group assignment JSON file
 
         Returns:
             List of examples, each with: question, answer, reasoning
@@ -158,8 +162,18 @@ class GSM8KLoader:
         if num_examples:
             dataset = dataset.select(range(min(num_examples, len(dataset))))
 
+        # If group_id specified, filter by group
+        indices_to_load = None
+        if group_id is not None and group_file is not None:
+            indices_to_load = self._load_group_indices(group_file, group_id)
+            logger.info(f"Filtering to group {group_id}: {len(indices_to_load)} samples")
+
         examples = []
         for idx, example in enumerate(dataset):
+            # Skip if loading specific group and this index not in group
+            if indices_to_load is not None and idx not in indices_to_load:
+                continue
+
             # Parse the answer to extract reasoning steps
             answer_text = example.get("answer", "")
             reasoning = self._extract_reasoning(answer_text)
@@ -174,6 +188,19 @@ class GSM8KLoader:
 
         logger.info(f"Loaded {len(examples)} examples from GSM8K {split}")
         return examples
+
+    @staticmethod
+    def _load_group_indices(group_file: str, group_id: int) -> set:
+        """Load sample indices for a specific group from group assignment file."""
+        with open(group_file, 'r') as f:
+            data = json.load(f)
+
+        group_key = str(group_id)
+        if group_key not in data.get('groups', {}):
+            raise ValueError(f"Group {group_id} not found in {group_file}")
+
+        indices = data['groups'][group_key]['sample_indices']
+        return set(indices)
 
     @staticmethod
     def _extract_reasoning(answer_text: str) -> List[str]:
