@@ -1,0 +1,18 @@
+{
+  "mvp_model": {
+    "model_id": "mistralai/Mixtral-8x7B-v0.1",
+    "num_layers": 32,
+    "num_experts": 8,
+    "top_k": 2,
+    "router_module_path": "block_sparse_moe.gate"
+  },
+  "research_model": {
+    "model_id": "deepseek-ai/DeepSeek-V2-Lite",
+    "num_layers": null,
+    "num_experts": 64,
+    "top_k": 6,
+    "router_module_path": "mlp.gate",
+    "note": "num_layers is left unverified until the research-model migration issue confirms it against the loaded model's own config; see docs/MODEL_VERIFICATION.md."
+  },
+  "tokenizer_smoke_test_text": "The quick brown fox jumps over the lazy dog."
+}
