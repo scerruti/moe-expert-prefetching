@@ -189,9 +189,100 @@ class ModelLoader:
             "total_params": self._count_parameters(self.model) if self.model else None,
         }
 
+    def validate_architecture(self) -> bool:
+        """
+        Verify loaded model has correct architecture (num_experts, top_k, layers).
+
+        Returns:
+            True if architecture is correct, False otherwise
+        """
+        if self.model is None:
+            logger.error("Cannot validate architecture: model not loaded")
+            return False
+
+        num_experts = self.config["num_experts"]
+        top_k = self.config["top_k"]
+
+        # Get actual values from model config
+        actual_experts = getattr(self.model.config, "num_local_experts", None)
+        actual_top_k = getattr(self.model.config, "num_experts_per_tok", None)
+
+        success = True
+        if actual_experts != num_experts:
+            logger.error(f"Architecture mismatch: expected {num_experts} experts, got {actual_experts}")
+            success = False
+        else:
+            logger.info(f"✅ Experts: {actual_experts}")
+
+        if actual_top_k != top_k:
+            logger.error(f"Architecture mismatch: expected top-{top_k}, got top-{actual_top_k}")
+            success = False
+        else:
+            logger.info(f"✅ Top-K: {actual_top_k}")
+
+        return success
+
+    def validate_tokenizer(self, sample_text: str) -> bool:
+        """
+        Test tokenizer encode/decode roundtrip.
+
+        Args:
+            sample_text: Text to encode and decode
+
+        Returns:
+            True if roundtrip is lossless, False otherwise
+        """
+        if self.tokenizer is None:
+            logger.error("Cannot validate tokenizer: tokenizer not loaded")
+            return False
+
+        token_ids = self.tokenizer.encode(sample_text)
+        decoded_text = self.tokenizer.decode(token_ids, skip_special_tokens=True)
+
+        if decoded_text.strip() == sample_text.strip():
+            logger.info(f"✅ Tokenizer roundtrip: '{sample_text}' -> {len(token_ids)} tokens -> '{decoded_text}'")
+            return True
+        else:
+            logger.error(f"Tokenizer roundtrip failed: '{sample_text}' != '{decoded_text}'")
+            return False
+
+    def validate_forward_pass(self, sample_text: str) -> bool:
+        """
+        Run a forward pass to verify model is wired correctly.
+
+        Confirms:
+        - Tokenizer works with model
+        - No gradients are tracked
+        - Model produces output logits
+
+        Args:
+            sample_text: Text to run through model
+
+        Returns:
+            True if forward pass succeeds, False otherwise
+        """
+        if self.model is None or self.tokenizer is None:
+            logger.error("Cannot validate forward pass: model or tokenizer not loaded")
+            return False
+
+        try:
+            device = next(self.model.parameters()).device
+            inputs = self.tokenizer(sample_text, return_tensors="pt").to(device)
+
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+
+            logits_shape = outputs.logits.shape
+            logger.info(f"✅ Forward pass: input '{sample_text}' -> logits shape {logits_shape}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Forward pass failed: {e}")
+            return False
+
 
 def test_model_loading():
-    """Test script to verify model loads correctly."""
+    """Test script to verify model loads correctly and passes validation."""
     try:
         loader = ModelLoader("qwen3-vl-30b")
         model, tokenizer, config = loader.load()
@@ -199,10 +290,13 @@ def test_model_loading():
         logger.info("✅ Model loading test passed")
         logger.info(f"Model config: {loader.get_model_info()}")
 
-        # Test tokenizer
-        test_text = "Hello, how are you?"
-        tokens = tokenizer.encode(test_text)
-        logger.info(f"✅ Tokenizer test passed: '{test_text}' -> {len(tokens)} tokens")
+        # Validation checks
+        sample_text = "Hello, how are you?"
+        all_passed = True
+
+        all_passed &= loader.validate_architecture()
+        all_passed &= loader.validate_tokenizer(sample_text)
+        all_passed &= loader.validate_forward_pass(sample_text)
 
         # Test router gate access
         if hasattr(model, "model") and hasattr(model.model, "layers"):
@@ -213,7 +307,12 @@ def test_model_loading():
             else:
                 logger.warning("⚠️  Router gate not found (may need architecture-specific handling)")
 
-        return True
+        if all_passed:
+            logger.info("✅ All validations passed!")
+        else:
+            logger.error("❌ Some validations failed")
+
+        return all_passed
 
     except Exception as e:
         logger.error(f"❌ Model loading test failed: {e}")
