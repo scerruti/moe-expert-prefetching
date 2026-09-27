@@ -32,8 +32,8 @@ class ModelConfig:
         "qwen1.5-moe-a2.7b": {
             "model_id": "Qwen/Qwen1.5-MoE-A2.7B-Chat",
             "router_gate_path": "mlp.gate",
-            "num_experts": 16,
-            "top_k": 6,
+            "num_experts": 60,
+            "top_k": 4,
             "is_vision": False,
             "note": "Small MoE model for validation and testing on limited GPUs (Colab A100)",
         },
@@ -203,8 +203,11 @@ class ModelLoader:
         num_experts = self.config["num_experts"]
         top_k = self.config["top_k"]
 
-        # Get actual values from model config
+        # Different models use different attribute names for expert count
         actual_experts = getattr(self.model.config, "num_local_experts", None)
+        if actual_experts is None:
+            actual_experts = getattr(self.model.config, "num_experts", None)
+
         actual_top_k = getattr(self.model.config, "num_experts_per_tok", None)
 
         success = True
