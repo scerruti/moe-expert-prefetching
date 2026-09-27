@@ -3,8 +3,9 @@
 Generic MoE Model Loader - supports multiple sparse MoE architectures.
 
 Supports:
-- Qwen3-VL-30B (mlp.gate for router)
+- Qwen1.5-MoE-A2.7B (mlp.router for router) - Small, for validation
 - Mixtral 8x7B (block_sparse_moe.gate for router)
+- Qwen3-VL-30B (mlp.gate for router)
 - DeepSeek-V2-Lite (mlp.gate for router)
 
 Usage:
@@ -28,13 +29,13 @@ class ModelConfig:
     """Configuration for different MoE models."""
 
     MODELS = {
-        "qwen3-vl-30b": {
-            "model_id": "Qwen/Qwen3-VL-30B-A3B-Instruct",
+        "qwen1.5-moe-a2.7b": {
+            "model_id": "Qwen/Qwen1.5-MoE-A2.7B-Chat",
             "router_gate_path": "mlp.gate",
-            "num_experts": 128,
+            "num_experts": 16,
             "top_k": 6,
-            "is_vision": True,
-            "note": "Vision-language model - requires custom loading. Use qwen3-moe for text-only.",
+            "is_vision": False,
+            "note": "Small MoE model for validation and testing on limited GPUs (Colab A100)",
         },
         "mixtral-8x7b": {
             "model_id": "mistralai/Mixtral-8x7B-Instruct-v0.1",
@@ -42,6 +43,14 @@ class ModelConfig:
             "num_experts": 8,
             "top_k": 2,
             "is_vision": False,
+        },
+        "qwen3-vl-30b": {
+            "model_id": "Qwen/Qwen3-VL-30B-A3B-Instruct",
+            "router_gate_path": "mlp.gate",
+            "num_experts": 128,
+            "top_k": 6,
+            "is_vision": True,
+            "note": "Vision-language model - requires custom loading. Use qwen3-moe for text-only.",
         },
         "deepseek-v2-lite": {
             "model_id": "deepseek-ai/DeepSeek-V2-Lite",
