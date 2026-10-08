@@ -64,6 +64,14 @@ class DataCollectionTests(unittest.TestCase):
         second, _ = collect(make_datasets(), base_seed=7)
         self.assertEqual(first, second)
 
+    def test_logged_seeds_reproduce_orderings(self):
+        datasets = make_datasets()
+        calls, summary = collect(datasets)
+        for run, seed in enumerate(summary["run_seeds"]):
+            for name in ["gsm8k", "mbpp"]:
+                seen = [ex for r, n, _, ex in calls if r == run and n == name]
+                self.assertEqual(seen, shuffled(datasets[name], seed))
+
     def test_shuffle_does_not_mutate_input(self):
         examples = make_datasets()["gsm8k"]
         original = list(examples)

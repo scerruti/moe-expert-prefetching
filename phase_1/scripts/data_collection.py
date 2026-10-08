@@ -21,6 +21,7 @@ import random
 from typing import Any, Callable, Dict, List, Optional
 
 from tqdm import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ def load_datasets(
     gsm8k = GSM8KLoader().load(split="train", num_examples=num_examples)
 
     mbpp_loader = MBPPLoader()
-    if num_examples:
+    if num_examples is not None:
         mbpp = mbpp_loader.load(split="train", num_examples=num_examples)
     else:
         mbpp = []
@@ -107,7 +108,7 @@ def run_collection(
     seeds = []
     processed = 0
 
-    with tqdm(
+    with logging_redirect_tqdm(), tqdm(
         total=total, desc="Collecting", unit="prompt", disable=not show_progress
     ) as pbar:
         for run_idx in range(num_runs):
@@ -117,10 +118,7 @@ def run_collection(
 
             for dataset_name in names:
                 pbar.set_postfix(run=f"{run_idx + 1}/{num_runs}", dataset=dataset_name)
-                # Offset seed per dataset so datasets don't share an ordering
-                order = shuffled(
-                    datasets[dataset_name], seed * 1000 + names.index(dataset_name)
-                )
+                order = shuffled(datasets[dataset_name], seed)
 
                 for position, example in enumerate(order):
                     if process_fn is not None:
