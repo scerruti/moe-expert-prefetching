@@ -51,7 +51,7 @@ Sequential Path (Critical Path)
 - **Assignee:** [Available]
 - **Estimated Duration:** 2 days
 - **Labels:** `phase-1/datasets`, `type/implementation`, `priority/critical`, `blocker/depends-on`
-- **Description:** Load and prepare 8.5k GSM8K examples
+- **Description:** Load and prepare 7,473 GSM8K train examples
 - **Link:** https://github.com/scerruti/moe-expert-prefetching/issues/2
 
 #### #3: Dataset Loading - MBPP
@@ -59,7 +59,7 @@ Sequential Path (Critical Path)
 - **Assignee:** [Available]
 - **Estimated Duration:** 1-2 days
 - **Labels:** `phase-1/datasets`, `type/implementation`, `priority/critical`, `blocker/depends-on`
-- **Description:** Load and prepare 974 MBPP examples
+- **Description:** Load and prepare 964 MBPP examples
 - **Link:** https://github.com/scerruti/moe-expert-prefetching/issues/3
 
 #### #4: Model Loading and Setup
@@ -83,7 +83,7 @@ Sequential Path (Critical Path)
 - **Assignee:** [Available]
 - **Estimated Duration:** 3-4 days
 - **Labels:** `phase-1/collection`, `type/implementation`, `priority/critical`, `blocker/depends-on`
-- **Description:** Main loop: 5 runs × 2 datasets × 9.5k prompts
+- **Description:** Main loop: 5 runs × 2 datasets × ~8.4k prompts
 - **Link:** https://github.com/scerruti/moe-expert-prefetching/issues/6
 
 #### #7: Parquet Storage & Serialization

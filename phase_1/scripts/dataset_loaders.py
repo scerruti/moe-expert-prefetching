@@ -48,7 +48,7 @@ class MBPPLoader:
 
         dataset = load_dataset(self.dataset_name, split=split)
 
-        if num_examples:
+        if num_examples is not None:
             dataset = dataset.select(range(min(num_examples, len(dataset))))
 
         examples = []
@@ -159,7 +159,7 @@ class GSM8KLoader:
         # GSM8K needs 'main' configuration
         dataset = load_dataset(self.dataset_name, "main", split=split)
 
-        if num_examples:
+        if num_examples is not None:
             dataset = dataset.select(range(min(num_examples, len(dataset))))
 
         # If group_id specified, filter by group
