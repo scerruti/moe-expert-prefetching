@@ -11,7 +11,7 @@ This document provides a high-level architectural overview for Phase 1 implement
 │                    Phase 1 Data Collection                   │
 └─────────────────────────────────────────────────────────────┘
 
-Input: GSM8K (8.5k) + MBPP (974 examples)
+Input: GSM8K train (7,473) + MBPP all splits (964 examples)
        ↓
    ┌───────────────────────────────────────┐
    │  Load & Prepare Datasets              │
@@ -203,11 +203,11 @@ phase_1/
 │
 data/
 ├── gsm8k_routing_traces.parquet
-│   └─ Rows: ~850k (8.5k prompts × 100 avg tokens × 1 record/token)
+│   └─ Rows: ~750k (7,473 prompts × 100 avg tokens × 1 record/token)
 │   └─ Parquet partition by run # (optional)
 │
 ├── mbpp_routing_traces.parquet
-│   └─ Rows: ~100k (974 prompts × 100 avg tokens)
+│   └─ Rows: ~96k (964 prompts × 100 avg tokens)
 │
 ├── validation_reports/
 │   └── phase_1_validation.md
@@ -221,7 +221,7 @@ data/
     ├─ num_layers: 32
     ├─ num_experts: 128
     ├─ top_k: 2
-    ├─ datasets: {gsm8k: 8500, mbpp: 974}
+    ├─ datasets: {gsm8k: 7473, mbpp: 964}
     ├─ runs: 5
     ├─ execution_times: {...}
     └─ git_commit: "..."
@@ -309,7 +309,7 @@ for hook in hooks:
 |--------|--------|-------|
 | Throughput | 50-100 tokens/sec | Depends on GPU, batch size |
 | Memory (peak) | <80GB | A100 HBM limit |
-| Total runtime | 12-24 hours | For 9.5k prompts × 5 runs |
+| Total runtime | 12-24 hours | For ~8.4k prompts × 5 runs |
 | Determinism | 100% | Zero variance across runs |
 | Data compression ratio | 10:1+ | Parquet snappy compression |
 
@@ -357,7 +357,7 @@ Try:
 - [ ] Execution time estimation
 
 ### Phase 1d: Full-Scale Validation (Day 7+)
-- [ ] All 9.5k examples, 5 runs
+- [ ] All ~8.4k examples, 5 runs
 - [ ] All validation checks pass
 - [ ] Metadata and logging complete
 - [ ] Ready for Phase 2 analysis
