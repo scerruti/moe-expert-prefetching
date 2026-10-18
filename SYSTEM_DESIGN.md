@@ -112,7 +112,7 @@ for prompt in dataset:
 | `token_str` | string | Human-readable token string |
 | `token_position` | int32 | Position within the sequence (0-indexed) |
 | `layer_index` | int32 | Which MoE layer (0 to num_layers-1) |
-| `expert_probabilities` | float32[E] | Softmax probabilities across all E experts |
+| `expert_probs` | float32[E] | Softmax probabilities across all E experts |
 | `selected_experts` | int16[k] | Indices of top-$k$ activated experts |
 | `selected_probs` | float32[k] | Probabilities for the selected experts |
 | `dataset_source` | string | "gsm8k" or "mbpp" |
@@ -307,7 +307,7 @@ An empirical research investigation to establish a proof-of-concept for speculat
 
 ### Data Structure Diagram
 
-Data collected per token: `(sequence_id, token_id, token_str, token_position, layer_index, expert_probabilities[E], selected_experts[k], dataset_source)`
+Data collected per token: `(sequence_id, token_id, token_str, token_position, layer_index, expert_probs[E], selected_experts[k], dataset_source)`
 
 Stored in columnar Parquet format for efficient aggregation and querying.
 
