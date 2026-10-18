@@ -28,21 +28,25 @@ class RoutingDataBuffer:
 def create_router_hook(layer_idx, data_buffer):
     """
     Creates a forward hook to capture routing data for a specific MoE layer.
+    Gate output is a tuple: (logits, selected_weights, selected_indices)
     """
     def hook(module, input, output):
+        # Gate output is a tuple: (logits, selected_weights, selected_indices)
+        logits, selected_weights, selected_indices = output
+
         # 1. Pre-softmax logits are captured directly from the gate's output
-        # Shape: [batch_size, sequence_length, num_experts]
-        logits = output
-        
+        # Shape: [batch_size * sequence_length, num_experts]
+
         # 2. Post-softmax probabilities are computed
         probabilities = F.softmax(logits, dim=-1)
-        
-        # 3. Top-2 expert indices are extracted
-        _, top2_indices = torch.topk(probabilities, k=2, dim=-1)
-        
+
+        # 3. Top-2 expert indices are already extracted by the gate (selected_indices)
+        # Convert to the format we need (top-2 indices per token)
+        top2_indices = selected_indices.int()
+
         # 4. Save to thread-safe buffer
         data_buffer.add(layer_idx, logits, probabilities, top2_indices)
-        
+
     return hook
 
 def register_router_hooks(model, data_buffer):
@@ -50,16 +54,16 @@ def register_router_hooks(model, data_buffer):
     Registers forward hooks on all MoE router layers in the Mixtral model.
     """
     hook_handles = []
-    
+
     # Iterate through all layers (32 in the full 8x7B model)
     for i, layer in enumerate(model.model.layers):
-        # Find the block_sparse_moe.gate path
-        router_gate = layer.block_sparse_moe.gate
-        
+        # MoE router gate is at layer.mlp.gate (MixtralTopKRouter)
+        router_gate = layer.mlp.gate
+
         # Register the hook and store the handle for potential removal later
         handle = router_gate.register_forward_hook(create_router_hook(i, data_buffer))
         hook_handles.append(handle)
-        
+
     return hook_handles
 
 def test_hooks():
