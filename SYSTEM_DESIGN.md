@@ -39,8 +39,8 @@ $$P(e \mid x_{t}, l, \text{run}_1) \equiv P(e \mid x_{t}, l, \text{run}_n)$$
 
 | Domain | Dataset | Size | Context Profile | Routing Hypothesis |
 | :--- | :--- | :--- | :--- | :--- |
-| **Mathematical Reasoning** | GSM8K | 8.5k examples | Chain-of-thought arithmetic deduction, numeric constants | High activation entropy in early layers; specialization in algorithmic/computational experts in deep layers. |
-| **Code Generation** | MBPP | 974 examples | Python syntax, indentation, logic structures | Concentrated expert allocation on syntactic tokens; domain separation from numeric reasoning paths. |
+| **Mathematical Reasoning** | GSM8K | 7,473 examples (train split) | Chain-of-thought arithmetic deduction, numeric constants | High activation entropy in early layers; specialization in algorithmic/computational experts in deep layers. |
+| **Code Generation** | MBPP | 964 examples | Python syntax, indentation, logic structures | Concentrated expert allocation on syntactic tokens; domain separation from numeric reasoning paths. |
 
 ### Comparative Analysis: Domain Separation vs. Invariant Structure
 
@@ -51,21 +51,21 @@ $$P(e \mid x_{t}, l, \text{run}_1) \equiv P(e \mid x_{t}, l, \text{run}_n)$$
 ### Dataset Specifics
 
 **GSM8K (Grade School Math 8K):**
-* 8,500 crowdsourced arithmetic word problems at elementary/middle school level.
+* ~8,500 crowdsourced arithmetic word problems at elementary/middle school level (7,473 train, 1,319 test). Phase 1 uses only the 7,473 train examples; test is held out.
 * Focus: Basic mathematical concepts (addition, subtraction, multiplication, division, percentages, rates, fractions).
 * Ground truth includes step-by-step solutions with intermediate calculations marked (e.g., `<<10+5=15>>`).
 * Can be sliced by step count (complexity), operator type (division, decimals), or keyword matching (money, rates/speed, fractions).
 * Variants available: GSM-Hard (larger numbers for true reasoning test), GSM8K-Socratic (explicit sub-question breakdowns).
 
 **MBPP (Mostly Basic Programming Problems):**
-* 974 total crowdsourced Python coding problems (500 train, 427 test, validation split).
+* 964 crowdsourced Python coding problems in the HF release (374 train, 500 test, 90 validation); all splits are used.
 * **Standard for leaderboards:** MBPP-Sanitized (427 hand-verified problems with clarified prompts and valid test cases).
 * Domain breakdown: ~58% math/arithmetic, ~43% list processing, ~19% string manipulation.
 * Each problem: `{task_id, text (prompt), code (reference impl), test_list (3 assertions)}`.
 * Entry-level CS: focuses on function-level code synthesis, avoiding multi-file projects or complex OOP patterns.
 * **Modern variant:** MBPP+ (EvalPlus) generates ~35x more unit tests per problem to catch edge-case bugs; frontier models typically drop 10–15 percentage points on MBPP+.
 
-**Token Cardinality:** Processing all tokens within ~9.5k examples during prefill (not just prompt text); exact token count varies by vocabulary size and natural prompt lengths in each dataset.
+**Token Cardinality:** Processing all tokens within ~8.4k examples (7,473 GSM8K + 964 MBPP) during prefill (not just prompt text); exact token count varies by vocabulary size and natural prompt lengths in each dataset.
 
 **Randomization Strategy:** Run the data collection 5 times with randomized prompt orderings to validate consistency. For validation, run a subset (e.g., 200 random prompts) against repeated randomized orderings to confirm deterministic routing.
 
@@ -332,7 +332,7 @@ Stored in columnar Parquet format for efficient aggregation and querying.
 
 ### Known Challenges
 
-* **Data Scale:** 9.5k prompts × multiple layers × 128 experts (Qwen3) = large probability matrices. Addressed by Parquet compression + columnar storage.
+* **Data Scale:** ~8.4k prompts × multiple layers × 128 experts (Qwen3) = large probability matrices. Addressed by Parquet compression + columnar storage.
 * **Model Switching:** Migrating from Mixtral to Qwen3 requires updating module path names (e.g., `block_sparse_moe.gate` → `model.layers[i].block_sparse_moe.gate`). Core hook logic unchanged.
 * **Token Determinism Across Runs:** Assumes model settings (temperature, top-p, etc.) remain frozen; any stochasticity (e.g., from dropout or generation strategies) invalidates the assumption. Enforce `model.eval()` and disable generation-based randomness.
 

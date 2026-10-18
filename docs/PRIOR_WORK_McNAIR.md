@@ -103,7 +103,7 @@ $$z_e = \frac{\text{observed\_wrong}_e - n_e \cdot \hat{p}}{\sqrt{n_e \cdot \hat
 | Component | McNair's Approach | Your Project |
 |---|---|---|
 | **Model** | Qwen3-VL-30B (48 layers, 128 experts, top-8) | Mixtral 8x7B (24 layers, 8 experts, top-2) |
-| **Dataset** | LEGOLite (400 questions, 4 spatial reasoning categories) | GSM8K + MBPP (~9.5k examples) |
+| **Dataset** | LEGOLite (400 questions, 4 spatial reasoning categories) | GSM8K + MBPP (~8.4k examples) |
 | **Telemetry** | Per-question expert routing (binary top-8 activations) | Per-token probability distributions (averaged) |
 | **Storage** | JSON (results.json) | Parquet (columnar, compressed) |
 | **Key Data File** | `data/phase2/runpod_second/results.json` | `<your_parquet_files>` (Phase 1 output) |
