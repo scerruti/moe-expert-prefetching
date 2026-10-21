@@ -127,7 +127,7 @@ All of the following must be true:
 | What batch size fits in A100/H100 HBM? | HIGH | Days 2-3 (profiling) |
 | Max sequence length for GSM8K/MBPP? | MEDIUM | Days 1-2 (data inspection) |
 | Hook overhead (memory, latency)? | MEDIUM | Days 3-4 (benchmarking) |
-| Parquet compression ratio (estimate memory on disk)? | LOW | Days 4-5 (first writes) |
+| ~~Parquet compression ratio (estimate memory on disk)?~~ Resolved in #55: ~1.2-1.3:1, ~20-26 GB for Phase 1 | LOW | Done |
 
 ---
 
