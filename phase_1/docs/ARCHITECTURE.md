@@ -311,7 +311,7 @@ for hook in hooks:
 | Memory (peak) | <80GB | A100 HBM limit |
 | Total runtime | 12-24 hours | For ~8.4k prompts × 5 runs |
 | Determinism | 100% | Zero variance across runs |
-| Data compression ratio | 10:1+ | Parquet snappy compression |
+| Data compression ratio | ~1.2-1.3:1 (~20-26 GB total) | Parquet zstd, lossless float32 `expert_probs` kept for Phase 2 (decided in #55) |
 
 ---
 

@@ -102,7 +102,7 @@ moe/
   - `token_str` (string)
   - `token_position` (int32)
   - `layer_index` (int32)
-  - `expert_probabilities` (float32 array, size E)
+  - `expert_probs` (float32 array, size E)
   - `selected_experts` (int16 array, size k)
   - `selected_probs` (float32 array, size k)
   - `dataset_source` (string)
