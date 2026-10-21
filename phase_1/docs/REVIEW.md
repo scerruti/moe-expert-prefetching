@@ -25,7 +25,7 @@ Phase 1 is well-specified in SYSTEM_DESIGN.md with clear objectives, data schema
 
 ### Key Design Decisions (Already Made)
 1. **Model:** Mixtral 8x7B (primary) with optional DeepSeek-Coder-V2-Lite (code-optimized)
-2. **Datasets:** GSM8K (8.5k math problems) + MBPP (974 code problems)
+2. **Datasets:** GSM8K (7,473 train-split math problems) + MBPP (964 code problems)
 3. **Storage:** Parquet format (columnar, compressed)
 4. **Data Collection:** PyTorch forward hooks on router layers
 5. **Focus:** Prefill phase only (deterministic routing, no generation noise)
@@ -92,7 +92,7 @@ moe/
               # Store running averages
   ```
 - [ ] Running sum/count tracking (averaging repeated tokens)
-- [ ] Memory-efficient buffering (avoid OOM with 9.5k+ examples)
+- [ ] Memory-efficient buffering (avoid OOM with ~8.4k examples)
 - [ ] Progress tracking (tqdm)
 
 #### 5. **Storage & Serialization** (CRITICAL)
@@ -182,7 +182,7 @@ moe/
 
 | Risk | Impact | Mitigation |
 |------|--------|-----------|
-| OOM with 9.5k examples × 128 experts | HIGH | Batch processing, incremental Parquet writes |
+| OOM with ~8.4k examples × 128 experts | HIGH | Batch processing, incremental Parquet writes |
 | Stochasticity in model forward (unexpected) | MEDIUM | Enforce `model.eval()`, verify determinism early |
 | Hook registration fails on model architecture | MEDIUM | Test hook on toy model first; layer path may vary |
 | GPU instance timeout mid-run | MEDIUM | Checkpoint after each dataset; resume capability |
@@ -193,8 +193,8 @@ moe/
 ## Deliverables (End of Phase 1)
 
 1. **Routing Traces (Parquet):**
-   - `data/gsm8k_routing_traces.parquet` (5 runs, all 8.5k examples)
-   - `data/mbpp_routing_traces.parquet` (5 runs, all 974 examples)
+   - `data/gsm8k_routing_traces.parquet` (5 runs, all 7,473 train examples)
+   - `data/mbpp_routing_traces.parquet` (5 runs, all 964 examples)
 
 2. **Validation Report:** `data/validation_reports/phase_1_validation.md`
    - Determinism verification
@@ -236,7 +236,7 @@ moe/
 ## Success Criteria
 
 - [ ] Phase 1 code runs without errors on full datasets
-- [ ] All 9.5k examples tokenized and forwarded through model
+- [ ] All ~8.4k examples tokenized and forwarded through model
 - [ ] Expert routing data stored in Parquet with no corruption
 - [ ] Determinism check: 100% of prompts show identical routing across 5 runs
 - [ ] Validation report confirms data quality and readiness for Phase 2

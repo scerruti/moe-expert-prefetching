@@ -23,7 +23,7 @@ Phase 1 is **fully designed** and **ready for implementation**. All architectura
 
 ### ✅ Key Decisions Locked In
 - **Model:** Mixtral 8x7B (8 experts, top-2 routing)
-- **Datasets:** 8.5k + 974 examples (9.5k total)
+- **Datasets:** 7,473 GSM8K train + 964 MBPP (8,437 total)
 - **Runs:** 5 randomized passes per dataset
 - **Hook Target:** `block_sparse_moe.gate` module at each layer
 - **Output Format:** Apache Parquet (compressed, columnar)
@@ -108,7 +108,7 @@ matplotlib>=3.5
 
 All of the following must be true:
 
-- [ ] 9.5k+ examples processed without errors
+- [ ] All 8,437 examples processed without errors
 - [ ] Routing data captured for all 32 MoE layers (Mixtral)
 - [ ] Parquet files pass integrity checks (valid schema, no corruption)
 - [ ] Determinism verification: 100% of sample prompts show identical routing across 5 runs
