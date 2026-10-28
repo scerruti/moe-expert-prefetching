@@ -120,7 +120,7 @@
   - [ ] `token_str` (string)
   - [ ] `token_position` (int32)
   - [ ] `layer_index` (int32)
-  - [ ] `expert_probabilities` (float32 array)
+  - [ ] `expert_probs` (float32 array)
   - [ ] `selected_experts` (int16 array)
   - [ ] `selected_probs` (float32 array)
   - [ ] `dataset_source` (string)
