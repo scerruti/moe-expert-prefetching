@@ -80,8 +80,7 @@ class ForwardPassCapture:
         self.routing_buffer = RoutingDataBuffer()
         self.hooks = register_router_hooks(
             self.model,
-            self.routing_buffer,
-            device=self.device
+            self.routing_buffer
         )
         logger.info(f"✅ Registered {len(self.hooks)} hooks on router layers")
         return self.routing_buffer
