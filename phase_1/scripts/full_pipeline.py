@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
-from dataset_loaders import GSM8K_Loader, MBPP_Loader
+from dataset_loaders import GSM8KLoader, MBPPLoader
 from forward_pass import ForwardPassCapture
 from model_loader import ModelLoader
 from parquet_storage import RoutingParquetWriter, verify_parquet
@@ -106,8 +106,8 @@ class FullPipeline:
         """Load GSM8K and MBPP datasets."""
         logger.info("Loading datasets...")
 
-        gsm8k_loader = GSM8K_Loader()
-        mbpp_loader = MBPP_Loader()
+        gsm8k_loader = GSM8KLoader()
+        mbpp_loader = MBPPLoader()
 
         gsm8k_prompts = gsm8k_loader.load()
         mbpp_prompts = mbpp_loader.load()
