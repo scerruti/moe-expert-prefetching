@@ -1,6 +1,15 @@
+# Phase 1 Dependencies - Carefully pinned for compatibility
+# See: Issue #72 (torch_dtype), #73 (torch/torchvision), #74 (transformers)
+
+# torch 2.11.0 + torchvision 0.16.0 are compatible
+# torch 2.14.0 fails with torchvision (requires 0.15.x or 0.26.x incompatible)
 torch==2.11.0
 torchvision==0.16.0
-transformers==5.17.0
+
+# transformers 5.17.0 has internal import errors (_get_parameter_tp_plan)
+# transformers 4.40.2+ is stable, supports Qwen1.5-MoE, proven in production
+transformers==4.40.2
+
 datasets==5.0.1
 pyarrow==25.0.1
 tqdm==4.70.1
