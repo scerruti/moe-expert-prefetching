@@ -16,6 +16,7 @@ from pathlib import Path
 import tempfile
 import shutil
 
+import pytest
 import torch
 
 from full_pipeline import FullPipeline, run_full_pipeline, PipelineStats
@@ -42,9 +43,8 @@ def test_pipeline_initialization():
     assert pipeline.device in ["cuda", "cpu"]
     logger.info(f"✅ Pipeline initialized on {pipeline.device}")
 
-    return True
 
-
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU and bitsandbytes for 4-bit quantization")
 def test_model_loading():
     """Test model and hook loading."""
     logger.info("\n" + "=" * 60)
@@ -85,9 +85,8 @@ def test_dataset_loading():
     assert len(mbpp_prompts) > 0
     logger.info(f"✅ Loaded {len(gsm8k_prompts)} GSM8K + {len(mbpp_prompts)} MBPP (limited to 10)")
 
-    return True
 
-
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU and bitsandbytes for 4-bit quantization")
 def test_single_pass_execution():
     """Test execution of a single collection pass."""
     logger.info("\n" + "=" * 60)
@@ -121,7 +120,6 @@ def test_single_pass_execution():
         logger.info(f"✅ Single pass: {prompts_processed} prompts, {routing_events} routing events")
 
         pipeline.capture.cleanup()
-    return True
 
 
 def test_parquet_row_validation():
@@ -166,8 +164,6 @@ def test_parquet_row_validation():
     assert not pipeline._validate_row(invalid_row_3)
     logger.info("✅ Row with inf rejected")
 
-    return True
-
 
 def test_row_conversion():
     """Test conversion of routing data to parquet rows."""
@@ -211,9 +207,8 @@ def test_row_conversion():
     assert len(rows) == 6  # 3 tokens × 2 layers
     logger.info(f"✅ Converted routing data to {len(rows)} parquet rows")
 
-    return True
 
-
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU and bitsandbytes for 4-bit quantization")
 def test_full_pipeline_subset_collection():
     """Test full pipeline on 100-example subset."""
     logger.info("\n" + "=" * 60)
@@ -238,9 +233,8 @@ def test_full_pipeline_subset_collection():
         logger.info(f"   - Routing events: {stats.total_routing_events}")
         logger.info(f"   - Errors: {len(stats.errors)}")
 
-    return stats
 
-
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU and bitsandbytes for 4-bit quantization")
 def test_pipeline_error_handling():
     """Test that pipeline handles errors gracefully."""
     logger.info("\n" + "=" * 60)
@@ -273,9 +267,9 @@ def test_pipeline_error_handling():
         logger.info(f"✅ Pipeline created parent directories automatically")
 
         pipeline.capture.cleanup()
-    return True
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU and bitsandbytes for 4-bit quantization")
 def test_determinism_seed_control():
     """Test that seed control enables reproducible runs."""
     logger.info("\n" + "=" * 60)
@@ -316,7 +310,6 @@ def test_determinism_seed_control():
         logger.info(f"✅ Same seed produced consistent results ({prompts_1} prompts, {events_1} events)")
 
         pipeline.capture.cleanup()
-    return True
 
 
 def main():
