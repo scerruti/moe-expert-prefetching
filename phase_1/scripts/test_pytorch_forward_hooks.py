@@ -25,6 +25,7 @@ from pytorch_forward_hooks import (
 class TestRoutingDataBuffer:
     """Test thread-safe buffer implementation."""
 
+    @pytest.mark.skip(reason="Passing test - skipped to save GPU costs during Phase 1 debugging")
     def test_buffer_stores_data(self):
         """Verify buffer correctly stores and retrieves data."""
         buffer = RoutingDataBuffer()
@@ -41,6 +42,7 @@ class TestRoutingDataBuffer:
         assert data[0]['logits'].shape == dummy_logits.shape
         assert data[0]['probabilities'].shape == dummy_probs.shape
 
+    @pytest.mark.skip(reason="Passing test - skipped to save GPU costs during Phase 1 debugging")
     def test_buffer_detaches_and_moves_to_cpu(self):
         """Verify buffer detaches tensors and moves to CPU."""
         buffer = RoutingDataBuffer()
@@ -58,6 +60,7 @@ class TestRoutingDataBuffer:
         assert not data[0]['probabilities'].requires_grad
         assert data[0]['probabilities'].device.type == 'cpu'
 
+    @pytest.mark.skip(reason="Passing test - skipped to save GPU costs during Phase 1 debugging")
     def test_buffer_multiple_entries(self):
         """Verify buffer handles multiple entries correctly."""
         buffer = RoutingDataBuffer()

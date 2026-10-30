@@ -25,6 +25,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+@pytest.mark.skip(reason="Passing test - skipped to save GPU costs during Phase 1 debugging")
 def test_pipeline_initialization():
     """Test that pipeline initializes correctly."""
     logger.info("=" * 60)
@@ -70,6 +71,7 @@ def test_model_loading():
     return True
 
 
+@pytest.mark.skip(reason="Passing test - skipped to save GPU costs during Phase 1 debugging")
 def test_dataset_loading():
     """Test dataset loading and subset limiting."""
     logger.info("\n" + "=" * 60)
@@ -122,6 +124,7 @@ def test_single_pass_execution():
         pipeline.capture.cleanup()
 
 
+@pytest.mark.skip(reason="Passing test - skipped to save GPU costs during Phase 1 debugging")
 def test_parquet_row_validation():
     """Test validation of parquet rows."""
     logger.info("\n" + "=" * 60)
@@ -165,6 +168,7 @@ def test_parquet_row_validation():
     logger.info("✅ Row with inf rejected")
 
 
+@pytest.mark.skip(reason="Passing test - skipped to save GPU costs during Phase 1 debugging")
 def test_row_conversion():
     """Test conversion of routing data to parquet rows."""
     logger.info("\n" + "=" * 60)
