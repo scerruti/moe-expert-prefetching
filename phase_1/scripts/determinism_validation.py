@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+import pandas as pd
 import pyarrow.parquet as pq
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DeterminismCheckResult:
     """Result of bitwise determinism validation."""
-    passed: bool
+    passed: bool = False
     identical_probabilities: int = 0
     total_comparisons: int = 0
     max_deviation: float = 0.0
@@ -35,7 +36,7 @@ class DeterminismCheckResult:
 @dataclass
 class RandomizationCheckResult:
     """Result of randomization consistency validation."""
-    passed: bool
+    passed: bool = False
     matching_top_k: int = 0
     total_shared_tokens: int = 0
     match_percentage: float = 0.0
@@ -45,7 +46,7 @@ class RandomizationCheckResult:
 @dataclass
 class DataQualityCheckResult:
     """Result of data quality validation."""
-    passed: bool
+    passed: bool = False
     total_rows: int = 0
     nan_count: int = 0
     inf_count: int = 0
@@ -145,12 +146,16 @@ class DeterminismValidator:
                 # Check expert_probs for NaN/inf
                 for idx, row in df.iterrows():
                     expert_probs = row.get("expert_probs", [])
+                    # Convert to list if it's a PyArrow array
+                    if expert_probs is not None and not isinstance(expert_probs, list):
+                        expert_probs = list(expert_probs)
+
                     if expert_probs:
                         for prob in expert_probs:
-                            if isinstance(prob, float):
-                                if prob != prob:  # NaN check
+                            if isinstance(prob, (float, np.floating)):
+                                if np.isnan(prob):
                                     result.nan_count += 1
-                                elif prob == float('inf') or prob == float('-inf'):
+                                elif np.isinf(prob):
                                     result.inf_count += 1
 
                     # Check probability sums (should be ~1.0)
@@ -161,6 +166,10 @@ class DeterminismValidator:
 
                     # Check selected_experts validity
                     selected_experts = row.get("selected_experts", [])
+                    # Convert to list if it's a PyArrow array
+                    if selected_experts is not None and not isinstance(selected_experts, list):
+                        selected_experts = list(selected_experts)
+
                     num_experts = len(expert_probs) if expert_probs else 60
                     for expert_idx in selected_experts:
                         if not (0 <= expert_idx < num_experts):
@@ -175,7 +184,8 @@ class DeterminismValidator:
             result.nan_count == 0 and
             result.inf_count == 0 and
             result.invalid_prob_sums == 0 and
-            result.invalid_indices == 0
+            result.invalid_indices == 0 and
+            len(result.notes) == 0
         )
 
         if result.passed:
@@ -234,6 +244,11 @@ class DeterminismValidator:
                         # Compare probabilities (allowing for float precision)
                         probs1 = row1.get("expert_probs", [])
                         probs2 = row2.get("expert_probs", [])
+                        # Convert to lists if they're PyArrow arrays
+                        if probs1 is not None and not isinstance(probs1, list):
+                            probs1 = list(probs1)
+                        if probs2 is not None and not isinstance(probs2, list):
+                            probs2 = list(probs2)
 
                         if probs1 and probs2:
                             max_diff = max(abs(p1 - p2) for p1, p2 in zip(probs1, probs2))
@@ -279,9 +294,7 @@ class DeterminismValidator:
             return result
 
         # Merge all data
-        combined_df = all_data[0]
-        for df in all_data[1:]:
-            combined_df = combined_df.append(df, ignore_index=True)
+        combined_df = pd.concat(all_data, ignore_index=True)
 
         # Group by token and layer
         for (seq_id, token_pos, layer_idx), group in combined_df.groupby(
@@ -293,7 +306,13 @@ class DeterminismValidator:
                 # Get top-2 experts for each occurrence
                 top_experts_list = []
                 for _, row in group.iterrows():
-                    selected = sorted(row.get("selected_experts", []))[:2]
+                    selected = row.get("selected_experts", [])
+                    # Convert to list if it's a PyArrow array
+                    if selected is not None and not isinstance(selected, list):
+                        selected = list(selected)
+                    # Convert to Python ints for comparison
+                    selected = [int(x) for x in selected]
+                    selected = sorted(selected)[:2]
                     top_experts_list.append(selected)
 
                 # Check if all have same top-2
@@ -325,13 +344,17 @@ class DeterminismValidator:
             df = pq.read_table(parquet_file).to_pandas()
 
             for _, row in df.iterrows():
-                layer_idx = row.get("layer_index", -1)
+                layer_idx = int(row.get("layer_index", -1))
                 selected_experts = row.get("selected_experts", [])
+                # Convert to list if it's a PyArrow array
+                if selected_experts is not None and not isinstance(selected_experts, list):
+                    selected_experts = list(selected_experts)
 
                 if layer_idx not in layer_stats:
                     layer_stats[layer_idx] = {}
 
                 for expert_idx in selected_experts:
+                    expert_idx = int(expert_idx)  # Convert PyArrow types to Python int
                     if expert_idx not in layer_stats[layer_idx]:
                         layer_stats[layer_idx][expert_idx] = 0
                     layer_stats[layer_idx][expert_idx] += 1
