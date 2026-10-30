@@ -136,7 +136,7 @@ class ModelLoader:
             )
             load_kwargs["quantization_config"] = quantization_config
         else:
-            load_kwargs["dtype"] = self.dtype
+            load_kwargs["torch_dtype"] = self.dtype
 
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_id,
