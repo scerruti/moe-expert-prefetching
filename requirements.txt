@@ -1,9 +1,10 @@
 # Phase 1 Dependencies - Using latest stable versions
-# When issues arise, fix the code, don't downgrade
+# Qwen1.5-MoE-A2.7B-Chat was built with transformers 4.39.0
+# 4.41.0 is latest stable before breaking changes in 4.45.0
 
 torch==2.15.0
 torchvision==0.29.2
-transformers==4.45.0
+transformers==4.41.0
 datasets>=3.0.0
 pyarrow>=18.0.0
 tqdm==4.70.1
