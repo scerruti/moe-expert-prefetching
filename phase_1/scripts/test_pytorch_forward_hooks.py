@@ -13,7 +13,7 @@ Validates all acceptance criteria:
 import time
 import torch
 import pytest
-from transformers import MixtralConfig, MixtralForCausalLM
+from transformers import AutoConfig, AutoModelForCausalLM
 
 from pytorch_forward_hooks import (
     RoutingDataBuffer,
@@ -79,17 +79,18 @@ class TestRouterHooks:
 
     @pytest.fixture
     def toy_model(self):
-        """Create a minimal Mixtral model for testing."""
-        config = MixtralConfig(
-            num_hidden_layers=4,
-            hidden_size=32,
-            intermediate_size=64,
-            num_attention_heads=4,
-            num_key_value_heads=2,
-            num_local_experts=8,
-            num_experts_per_tok=2
-        )
-        return MixtralForCausalLM(config)
+        """Create a minimal Qwen2MoE model for testing (Phase 1 architecture)."""
+        # Load Qwen1.5-MoE config and create a tiny version for testing
+        config = AutoConfig.from_pretrained("Qwen/Qwen1.5-MoE-A2.7B-Chat")
+        # Shrink to toy size
+        config.num_hidden_layers = 4
+        config.hidden_size = 32
+        config.intermediate_size = 64
+        config.num_attention_heads = 4
+        # MoE config
+        config.num_experts = 8
+        config.experts_per_tok = 2
+        return AutoModelForCausalLM.from_config(config)
 
     def test_hooks_fire_on_all_layers(self, toy_model):
         """AC: Hooks fire on all 32 layers (test with 4-layer toy model)."""

@@ -51,13 +51,18 @@ def create_router_hook(layer_idx, data_buffer):
 
 def register_router_hooks(model, data_buffer):
     """
-    Registers forward hooks on all MoE router layers in the Mixtral model.
+    Registers forward hooks on all MoE router layers in Qwen1.5-MoE-A2.7B.
+
+    Phase 1 Decision (PHASE_1_MODEL_DECISION.md): Locked to Qwen architecture.
+    Router gate is at layer.mlp.gate (Qwen2MoeSparseMoeBlock).
+
+    For other models, update the gate path (e.g., Mixtral: layer.block_sparse_moe.gate).
     """
     hook_handles = []
 
-    # Iterate through all layers (32 in the full 8x7B model)
+    # Iterate through all layers
     for i, layer in enumerate(model.model.layers):
-        # MoE router gate is at layer.mlp.gate (MixtralTopKRouter)
+        # Qwen1.5-MoE: Router gate is at layer.mlp.gate
         router_gate = layer.mlp.gate
 
         # Register the hook and store the handle for potential removal later
