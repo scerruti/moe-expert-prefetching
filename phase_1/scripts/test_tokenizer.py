@@ -32,14 +32,13 @@ SAMPLE_PROMPTS = [
 ]
 
 
-def test_tokenization_basic():
+def test_tokenization_basic(qwen_model):
     """Test basic tokenization and tensor preparation."""
     logger.info("=" * 60)
     logger.info("Test: Basic Tokenization")
     logger.info("=" * 60)
 
-    loader = ModelLoader("qwen1.5-moe-a2.7b")
-    model, tokenizer, config = loader.load()
+    model, tokenizer, config = qwen_model
 
     pipeline = TokenizationPipeline(tokenizer, "qwen1.5-moe-a2.7b")
 
@@ -58,14 +57,13 @@ def test_tokenization_basic():
     return result
 
 
-def test_repeated_tokens():
+def test_repeated_tokens(qwen_model):
     """Test tracking of repeated tokens."""
     logger.info("\n" + "=" * 60)
     logger.info("Test: Repeated Token Tracking")
     logger.info("=" * 60)
 
-    loader = ModelLoader("qwen1.5-moe-a2.7b")
-    model, tokenizer, config = loader.load()
+    model, tokenizer, config = qwen_model
 
     pipeline = TokenizationPipeline(tokenizer, "qwen1.5-moe-a2.7b")
     result = pipeline.tokenize_batch(SAMPLE_PROMPTS)
@@ -85,14 +83,13 @@ def test_repeated_tokens():
     return result
 
 
-def test_output_format():
+def test_output_format(qwen_model):
     """Verify output format matches Phase 1 design."""
     logger.info("\n" + "=" * 60)
     logger.info("Test: Output Format Validation")
     logger.info("=" * 60)
 
-    loader = ModelLoader("qwen1.5-moe-a2.7b")
-    model, tokenizer, config = loader.load()
+    model, tokenizer, config = qwen_model
 
     pipeline = TokenizationPipeline(tokenizer, "qwen1.5-moe-a2.7b")
     result = pipeline.tokenize_batch(SAMPLE_PROMPTS)
@@ -117,14 +114,13 @@ def test_output_format():
     return result
 
 
-def test_stats_persistence():
+def test_stats_persistence(qwen_model):
     """Test saving and loading token statistics."""
     logger.info("\n" + "=" * 60)
     logger.info("Test: Statistics Persistence")
     logger.info("=" * 60)
 
-    loader = ModelLoader("qwen1.5-moe-a2.7b")
-    model, tokenizer, config = loader.load()
+    model, tokenizer, config = qwen_model
 
     pipeline = TokenizationPipeline(tokenizer, "qwen1.5-moe-a2.7b")
     result = pipeline.tokenize_batch(SAMPLE_PROMPTS)
@@ -148,14 +144,13 @@ def test_stats_persistence():
     return True
 
 
-def test_edge_cases_empty_and_long():
+def test_edge_cases_empty_and_long(qwen_model):
     """Test edge cases: empty prompts and very long prompts."""
     logger.info("\n" + "=" * 60)
     logger.info("Test: Edge Cases (Empty & Long Prompts)")
     logger.info("=" * 60)
 
-    loader = ModelLoader("qwen1.5-moe-a2.7b")
-    model, tokenizer, config = loader.load()
+    model, tokenizer, config = qwen_model
     pipeline = TokenizationPipeline(tokenizer, "qwen1.5-moe-a2.7b")
 
     # Test with edge case prompts
@@ -180,14 +175,13 @@ def test_edge_cases_empty_and_long():
     return result
 
 
-def test_special_characters_and_unicode():
+def test_special_characters_and_unicode(qwen_model):
     """Test handling of special characters and Unicode."""
     logger.info("\n" + "=" * 60)
     logger.info("Test: Special Characters & Unicode")
     logger.info("=" * 60)
 
-    loader = ModelLoader("qwen1.5-moe-a2.7b")
-    model, tokenizer, config = loader.load()
+    model, tokenizer, config = qwen_model
     pipeline = TokenizationPipeline(tokenizer, "qwen1.5-moe-a2.7b")
 
     special_prompts = [
@@ -210,14 +204,13 @@ def test_special_characters_and_unicode():
     return result
 
 
-def test_duplicate_prompts():
+def test_duplicate_prompts(qwen_model):
     """Test that duplicate prompts are handled correctly."""
     logger.info("\n" + "=" * 60)
     logger.info("Test: Duplicate Prompts")
     logger.info("=" * 60)
 
-    loader = ModelLoader("qwen1.5-moe-a2.7b")
-    model, tokenizer, config = loader.load()
+    model, tokenizer, config = qwen_model
     pipeline = TokenizationPipeline(tokenizer, "qwen1.5-moe-a2.7b")
 
     # Same prompt repeated
@@ -238,14 +231,13 @@ def test_duplicate_prompts():
     return result
 
 
-def test_batch_processing_realistic_scale():
+def test_batch_processing_realistic_scale(qwen_model):
     """Test tokenization with realistic batch sizes."""
     logger.info("\n" + "=" * 60)
     logger.info("Test: Realistic Batch Processing (100+ prompts)")
     logger.info("=" * 60)
 
-    loader = ModelLoader("qwen1.5-moe-a2.7b")
-    model, tokenizer, config = loader.load()
+    model, tokenizer, config = qwen_model
     pipeline = TokenizationPipeline(tokenizer, "qwen1.5-moe-a2.7b")
 
     # Generate realistic batch of 100 prompts
@@ -270,7 +262,7 @@ def test_batch_processing_realistic_scale():
     return result
 
 
-def test_multi_model_compatibility():
+def test_multi_model_compatibility(qwen_model):
     """Test tokenization with different model architectures."""
     logger.info("\n" + "=" * 60)
     logger.info("Test: Multi-Model Compatibility")
@@ -299,14 +291,13 @@ def test_multi_model_compatibility():
     return result_q
 
 
-def test_output_integration_with_routing():
+def test_output_integration_with_routing(qwen_model):
     """Verify output format matches expectations for routing telemetry (Issue #15)."""
     logger.info("\n" + "=" * 60)
     logger.info("Test: Integration with Routing Telemetry (Issue #15)")
     logger.info("=" * 60)
 
-    loader = ModelLoader("qwen1.5-moe-a2.7b")
-    model, tokenizer, config = loader.load()
+    model, tokenizer, config = qwen_model
     pipeline = TokenizationPipeline(tokenizer, "qwen1.5-moe-a2.7b")
 
     result = pipeline.tokenize_batch(SAMPLE_PROMPTS)
