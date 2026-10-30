@@ -16,9 +16,29 @@ Design and implementation plan for automated GPU testing in GitHub Actions.
 - ~$0.40 per run (at $8.88/hour)
 - Validates: full pipeline with real model, tokenization, hooks, forward pass
 
-## Proposed Strategy
+## Phase 1 Decision: Manual Colab Testing
 
-### Option A: GitHub Actions with GPU Runner (Recommended for MVP)
+**YAGNI: Keep it simple.**
+- ✅ Manual Colab A100 testing (works, no setup cost)
+- ✅ Results saved to Google Drive
+- ⏸️ GitHub Actions automation deferred to Phase 2
+- 🎯 RunPod integration planned when scaling GPU work
+
+**Why now:**
+- Phase 1 is one model, one dataset, locked scope
+- Weekly manual tests are fine for validation
+- Setup effort > benefit at current scale
+
+**Future (Phase 2+):**
+- RunPod API integration (has GitHub Actions support)
+- Automated test triggering on merges
+- Cost scales with usage (pay-per-minute)
+
+---
+
+## Proposed Strategy (Phase 2+)
+
+### Option A: RunPod + GitHub Actions (Recommended for Future)
 
 **When:** On merge to `main` only (not every PR, too expensive)
 
@@ -154,19 +174,22 @@ on:
 - ✅ CPU tests auto-run on PR
 - ✅ GPU tests documented (GPU_TESTING.md)
 - ✅ Test fixtures for memory management
-- 🟡 GPU tests run manually on Colab
+- ✅ GPU tests run manually on Colab A100
+- ✅ Results saved to Google Drive
+- **No GitHub Actions GPU integration** (YAGNI)
 
-**Phase 1.5 (Week of Nov 1):**
-- [ ] Set up self-hosted runner with A100
-- [ ] Add GPU test workflow to GitHub Actions
-- [ ] Configure result reporting
-- [ ] Document for team
+**Phase 2 (Post-Phase-1 - RunPod Integration):**
+- [ ] Evaluate RunPod API (or similar service)
+- [ ] GitHub Actions workflow with RunPod trigger
+- [ ] Automated GPU tests on merge to main
+- [ ] Cost monitoring and optimization
+- [ ] Multiple model/dataset combinations
 
-**Phase 2 (Post-Phase-1):**
-- [ ] Cost optimization (spot instances, shared runner)
-- [ ] Multiple GPU types (A100, H100, RTX)
+**Phase 3+ (Scaling):**
+- [ ] Cost optimization (caching, batch runs)
+- [ ] Multiple GPU types (A100, H100, L40)
 - [ ] Performance regression detection
-- [ ] Model update validation
+- [ ] Continuous dataset collection
 
 ## Cost Analysis
 
