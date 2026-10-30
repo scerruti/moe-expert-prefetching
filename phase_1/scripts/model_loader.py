@@ -135,8 +135,8 @@ class ModelLoader:
                 bnb_4bit_quant_type="nf4",
             )
             load_kwargs["quantization_config"] = quantization_config
-        else:
-            load_kwargs["torch_dtype"] = self.dtype
+        # Note: Qwen2MoeForCausalLM doesn't accept dtype parameter with device_map
+        # Load in default precision; dtype handling can be done post-load if needed
 
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_id,
