@@ -1,5 +1,6 @@
 #!/bin/bash
 # Run all acceptance tests on GPU and save output to Google Drive
+# Prerequisites: requirements.txt must be installed in the environment
 
 set -e
 
@@ -10,9 +11,6 @@ OUTPUT_FILE="${OUTPUT_DIR}/acceptance_tests_${TIMESTAMP}.txt"
 
 # Create output directory if needed
 mkdir -p "$OUTPUT_DIR"
-
-echo "Installing requirements..."
-pip install -q -r requirements.txt
 
 echo "Running acceptance tests..."
 echo "Output will be saved to: $OUTPUT_FILE"
