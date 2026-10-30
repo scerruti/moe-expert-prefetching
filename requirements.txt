@@ -1,10 +1,10 @@
 # Phase 1 Dependencies - Using latest stable versions
 # When issues arise, fix the code, don't downgrade
 
-torch==2.5.0
-torchvision==0.20.0
+torch==2.15.0
+torchvision==0.29.2
 transformers==4.45.0
-datasets==3.0.0
-pyarrow==18.0.0
+datasets>=3.0.0
+pyarrow>=18.0.0
 tqdm==4.70.1
 bitsandbytes>=0.46.1
