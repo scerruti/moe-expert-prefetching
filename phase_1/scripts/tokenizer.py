@@ -59,7 +59,7 @@ class TokenizationPipeline:
         Tokenize a batch of prompts and track repeated tokens.
 
         Args:
-            prompts: List of text prompts
+            prompts: List of text prompts (can be str or dict)
 
         Returns:
             Dictionary with:
@@ -74,8 +74,13 @@ class TokenizationPipeline:
         all_sequences = []
 
         for prompt in prompts:
-            sequence_id = hash(prompt) % (10**9)  # Simple hash for ID
-            token_ids = self.tokenizer.encode(prompt)
+            if isinstance(prompt, dict):
+                prompt_str = json.dumps(prompt, sort_keys=True)
+            else:
+                prompt_str = str(prompt)
+
+            sequence_id = hash(prompt_str) % (10**9)
+            token_ids = self.tokenizer.encode(prompt_str)
             token_strs = [self.tokenizer.decode([tid]) for tid in token_ids]
 
             all_token_ids.append(token_ids)
