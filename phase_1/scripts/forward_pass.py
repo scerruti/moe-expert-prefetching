@@ -212,16 +212,31 @@ class ForwardPassCapture:
 
     def _extract_layer_routing(
         self,
-        routing_events: List[Tuple],
+        routing_events: List,
         prompt_idx: int,
         token_pos: int,
         layer_idx: int,
     ) -> Optional[Dict[str, Any]]:
         """Extract routing data for a specific token and layer."""
         for event in routing_events:
-            if len(event) >= 5:
-                logits, selected_weights, selected_indices, event_layer_idx, event_batch_idx = event[:5]
+            # Handle dict format from RoutingDataBuffer
+            if isinstance(event, dict):
+                if event.get('layer_idx') == layer_idx:
+                    logits = event.get('logits')
+                    probabilities = event.get('probabilities')
+                    top2_indices = event.get('top2_indices')
 
+                    if logits is not None and len(logits) > token_pos:
+                        return {
+                            "layer_index": layer_idx,
+                            "expert_logits": logits[token_pos].tolist() if hasattr(logits[token_pos], "tolist") else logits[token_pos],
+                            "expert_probs": probabilities[token_pos].tolist() if hasattr(probabilities[token_pos], "tolist") else probabilities[token_pos],
+                            "selected_experts": top2_indices[token_pos].tolist() if hasattr(top2_indices[token_pos], "tolist") else top2_indices[token_pos],
+                            "selected_probs": probabilities[token_pos].tolist() if hasattr(probabilities[token_pos], "tolist") else probabilities[token_pos],
+                        }
+            # Handle tuple format (legacy)
+            elif len(event) >= 5:
+                logits, selected_weights, selected_indices, event_layer_idx, event_batch_idx = event[:5]
                 if event_batch_idx == prompt_idx and event_layer_idx == layer_idx:
                     if logits is not None and len(logits) > token_pos:
                         return {
