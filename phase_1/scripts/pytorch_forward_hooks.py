@@ -43,8 +43,10 @@ def create_router_hook(layer_idx, data_buffer):
         try:
             if isinstance(output, torch.Tensor):
                 logits = output
+                print(f"  Layer {layer_idx}: logits shape={logits.shape}, dtype={logits.dtype}", flush=True)
                 probabilities = F.softmax(logits, dim=-1)
                 top2_indices = torch.topk(probabilities, k=2, dim=-1)[1].int()
+                print(f"  Layer {layer_idx}: Adding data to buffer, top2_indices shape={top2_indices.shape}", flush=True)
             elif isinstance(output, tuple):
                 if len(output) == 3:
                     logits, selected_weights, selected_indices = output
