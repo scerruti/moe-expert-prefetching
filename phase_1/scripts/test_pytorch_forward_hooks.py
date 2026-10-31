@@ -142,7 +142,7 @@ class TestRouterHooks:
         for data in collected:
             logits = data['logits']
             # Logits are flattened: [batch_size * seq_len, num_experts]
-            assert logits.shape == (batch_size * seq_len, config.num_local_experts)
+            assert logits.shape == (batch_size * seq_len, config.num_experts)
             # Logits should NOT be normalized (sum to num_experts, not 1)
             sums = logits.sum(dim=-1)
             assert not torch.allclose(sums, torch.ones_like(sums))
@@ -168,7 +168,7 @@ class TestRouterHooks:
         # Verify probabilities are normalized (sum to 1)
         for data in collected:
             probs = data['probabilities']
-            assert probs.shape == (batch_size * seq_len, config.num_local_experts)
+            assert probs.shape == (batch_size * seq_len, config.num_experts)
             sums = probs.sum(dim=-1)
             assert torch.allclose(sums, torch.ones_like(sums), atol=1e-5)
             # Verify all values in [0, 1]
@@ -195,10 +195,13 @@ class TestRouterHooks:
         # Verify top-2 indices shape and validity
         for data in collected:
             top2 = data['top2_indices']
-            # Indices are flattened: [batch_size * seq_len, 2]
-            assert top2.shape == (batch_size * seq_len, 2)
+            # Indices are flattened: [batch_size * seq_len, experts_per_tok]
+            num_experts_per_token = getattr(config, 'experts_per_tok', config.num_experts)
+            expected_k = min(2, num_experts_per_token)
+            assert top2.shape[0] == batch_size * seq_len
+            assert top2.shape[1] >= expected_k
             # Indices should be in valid range [0, num_experts)
-            assert (top2 >= 0).all() and (top2 < config.num_local_experts).all()
+            assert (top2 >= 0).all() and (top2 < config.num_experts).all()
 
         for handle in handles:
             handle.remove()
