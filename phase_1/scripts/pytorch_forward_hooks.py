@@ -31,7 +31,14 @@ def create_router_hook(layer_idx, data_buffer):
     Handles both 2-value (Qwen2MoE: logits, routing_weights) and
     3-value (Mixtral: logits, selected_weights, selected_indices) gate outputs.
     """
+    call_count = [0]  # Use list to allow modification in nested function
+
     def hook(module, input, output):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"Hook at layer {layer_idx} called for first time")
         try:
             if isinstance(output, torch.Tensor):
                 logits = output
@@ -68,7 +75,11 @@ def register_router_hooks(model, data_buffer):
 
     For other models, update the gate path (e.g., Mixtral: layer.block_sparse_moe.gate).
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     hook_handles = []
+    registered_count = 0
 
     # Iterate through all layers
     for i, layer in enumerate(model.model.layers):
@@ -77,8 +88,10 @@ def register_router_hooks(model, data_buffer):
 
         # Register the hook and store the handle for potential removal later
         handle = router_gate.register_forward_hook(create_router_hook(i, data_buffer))
+        registered_count += 1
         hook_handles.append(handle)
 
+    logger.info(f"✅ Registered {registered_count} router hooks on {len(model.model.layers)} layers")
     return hook_handles
 
 def test_hooks():
