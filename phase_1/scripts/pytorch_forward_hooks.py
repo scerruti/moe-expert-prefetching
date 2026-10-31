@@ -32,25 +32,30 @@ def create_router_hook(layer_idx, data_buffer):
     3-value (Mixtral: logits, selected_weights, selected_indices) gate outputs.
     """
     def hook(module, input, output):
-        if isinstance(output, torch.Tensor):
-            logits = output
-            probabilities = F.softmax(logits, dim=-1)
-            top2_indices = torch.topk(probabilities, k=2, dim=-1)[1].int()
-        elif isinstance(output, tuple):
-            if len(output) == 3:
-                logits, selected_weights, selected_indices = output
-                top2_indices = selected_indices.int()
-            elif len(output) == 2:
-                logits, routing_weights = output
+        try:
+            if isinstance(output, torch.Tensor):
+                logits = output
                 probabilities = F.softmax(logits, dim=-1)
                 top2_indices = torch.topk(probabilities, k=2, dim=-1)[1].int()
+            elif isinstance(output, tuple):
+                if len(output) == 3:
+                    logits, selected_weights, selected_indices = output
+                    top2_indices = selected_indices.int()
+                elif len(output) == 2:
+                    logits, routing_weights = output
+                    probabilities = F.softmax(logits, dim=-1)
+                    top2_indices = torch.topk(probabilities, k=2, dim=-1)[1].int()
+                else:
+                    raise ValueError(f"Unexpected gate output tuple size: {len(output)}")
             else:
-                raise ValueError(f"Unexpected gate output tuple size: {len(output)}")
-        else:
-            raise ValueError(f"Unexpected gate output type: {type(output)}")
+                raise ValueError(f"Unexpected gate output type: {type(output)}")
 
-        probabilities = F.softmax(logits, dim=-1)
-        data_buffer.add(layer_idx, logits, probabilities, top2_indices)
+            probabilities = F.softmax(logits, dim=-1)
+            data_buffer.add(layer_idx, logits, probabilities, top2_indices)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Hook error at layer {layer_idx}: {e}", exc_info=True)
 
     return hook
 
