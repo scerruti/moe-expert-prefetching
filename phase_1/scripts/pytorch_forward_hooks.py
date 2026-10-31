@@ -38,6 +38,7 @@ def create_router_hook(layer_idx, data_buffer):
     def hook(module, input, output):
         call_count[0] += 1
         if call_count[0] == 1:
+            print(f"🎣 HOOK FIRED at layer {layer_idx} - output type: {type(output)}", flush=True)
             logger.info(f"🎣 Hook at layer {layer_idx} FIRED for first time - output type: {type(output)}")
         try:
             if isinstance(output, torch.Tensor):
