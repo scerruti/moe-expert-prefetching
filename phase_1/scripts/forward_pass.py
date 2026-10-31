@@ -143,7 +143,6 @@ class ForwardPassCapture:
         """Extract and structure routing data from hook buffer."""
         routing_data_list = []
         routing_events = self.routing_buffer.get_all()
-        print(f"📊 Got {len(routing_events)} total events from buffer", flush=True)
 
         for prompt_idx in range(batch_size):
             sequence_id = str(sequence_ids[prompt_idx])
