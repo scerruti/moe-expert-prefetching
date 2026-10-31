@@ -85,11 +85,13 @@ class TestRouterHooks:
         """Create a minimal Qwen2MoE model for testing (Phase 1 architecture)."""
         # Load Qwen1.5-MoE config and create a tiny version for testing
         config = AutoConfig.from_pretrained("Qwen/Qwen1.5-MoE-A2.7B-Chat")
-        # Shrink to toy size
-        config.num_hidden_layers = 4
-        config.hidden_size = 32
-        config.intermediate_size = 64
+        # Shrink to toy size - keep attention head proportions consistent
+        config.num_hidden_layers = 2
+        config.hidden_size = 64
+        config.intermediate_size = 256
         config.num_attention_heads = 4
+        if hasattr(config, 'num_key_value_heads'):
+            config.num_key_value_heads = 2
         # MoE config
         config.num_experts = 8
         config.experts_per_tok = 2
