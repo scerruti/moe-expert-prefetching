@@ -202,7 +202,11 @@ class ForwardPassCapture:
             return 0
         layer_indices = set()
         for event in routing_events:
-            if len(event) >= 4 and isinstance(event[3], int):
+            if isinstance(event, dict):
+                layer_idx = event.get('layer_idx')
+                if layer_idx is not None:
+                    layer_indices.add(layer_idx)
+            elif len(event) >= 4 and isinstance(event[3], int):
                 layer_indices.add(event[3])
         return len(layer_indices)
 

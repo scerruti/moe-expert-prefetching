@@ -72,6 +72,7 @@ class TokenizationPipeline:
         all_token_ids = []
         all_token_strs = []
         all_sequences = []
+        prompt_strs = []
 
         for prompt in prompts:
             if isinstance(prompt, dict):
@@ -79,6 +80,7 @@ class TokenizationPipeline:
             else:
                 prompt_str = str(prompt)
 
+            prompt_strs.append(prompt_str)
             sequence_id = hash(prompt_str) % (10**9)
             token_ids = self.tokenizer.encode(prompt_str)
             token_strs = [self.tokenizer.decode([tid]) for tid in token_ids]
@@ -103,7 +105,7 @@ class TokenizationPipeline:
 
         # Prepare tensors for model input
         token_tensors = self.tokenizer(
-            prompts,
+            prompt_strs,
             return_tensors="pt",
             padding=True,
             truncation=True,
