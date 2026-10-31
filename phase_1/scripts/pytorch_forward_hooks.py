@@ -60,8 +60,6 @@ def create_router_hook(layer_idx, data_buffer):
             probabilities = F.softmax(logits, dim=-1)
             data_buffer.add(layer_idx, logits, probabilities, top2_indices)
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"Hook error at layer {layer_idx}: {e}", exc_info=True)
 
     return hook
