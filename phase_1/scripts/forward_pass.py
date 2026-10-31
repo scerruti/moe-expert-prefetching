@@ -142,6 +142,8 @@ class ForwardPassCapture:
     ) -> List[PromptRoutingData]:
         """Extract and structure routing data from hook buffer."""
         routing_data_list = []
+        routing_events = self.routing_buffer.get_all()
+        print(f"📊 Got {len(routing_events)} total events from buffer", flush=True)
 
         for prompt_idx in range(batch_size):
             sequence_id = str(sequence_ids[prompt_idx])
@@ -158,10 +160,7 @@ class ForwardPassCapture:
                 num_layers=0,  # Will be set below
             )
 
-            # Extract routing data per token per layer
-            routing_events = self.routing_buffer.get_all()
-            print(f"📊 _extract: got {len(routing_events)} events for prompt {prompt_idx}", flush=True)
-
+            # Extract routing data per token per layer (already retrieved before loop)
             if routing_events:
                 num_layers = self._count_layers(routing_events)
                 prompt_routing.num_layers = num_layers
