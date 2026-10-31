@@ -123,10 +123,6 @@ class ForwardPassCapture:
             )
 
         # Collect routing data from hooks
-        print(f"📊 Forward pass complete, retrieving buffer data...", flush=True)
-        raw_events = self.routing_buffer.get_all()
-        print(f"📊 Retrieved {len(raw_events)} events from buffer", flush=True)
-
         routing_data_list = self._extract_routing_data(
             batch_size=batch_size,
             sequence_ids=sequence_ids,
