@@ -63,6 +63,7 @@ class FullPipeline:
         subset_size: Optional[int] = None,
         output_dir: Path = Path("data/phase_1_collection"),
         device: Optional[str] = None,
+        batch_size: int = 8,
     ):
         """
         Initialize full pipeline.
@@ -73,11 +74,13 @@ class FullPipeline:
             subset_size: Limit to N examples per dataset (None = use all)
             output_dir: Directory for parquet files
             device: Device for model (default: cuda if available)
+            batch_size: Prompts per forward pass (lower if GPU runs out of memory)
         """
         self.model_name = model_name
         self.num_runs = num_runs
         self.subset_size = subset_size
         self.output_dir = Path(output_dir)
+        self.batch_size = batch_size
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
 
         self.model = None
@@ -109,8 +112,9 @@ class FullPipeline:
         gsm8k_loader = GSM8KLoader()
         mbpp_loader = MBPPLoader()
 
-        gsm8k_prompts = gsm8k_loader.load()
-        mbpp_prompts = mbpp_loader.load()
+        # Loaders return example dicts; the pipeline needs the prompt text
+        gsm8k_prompts = [ex["question"] for ex in gsm8k_loader.load()]
+        mbpp_prompts = [ex["prompt"] for ex in mbpp_loader.load()]
 
         if self.subset_size:
             gsm8k_prompts = gsm8k_prompts[:self.subset_size]
@@ -155,45 +159,47 @@ class FullPipeline:
         routing_events_count = 0
 
         try:
-            # Tokenize all prompts
-            logger.info(f"Tokenizing {len(shuffled_prompts)} prompts...")
+            # Process in mini-batches: a single forward pass over thousands of
+            # padded prompts would exhaust GPU memory, and holding every
+            # routing row in RAM before writing would exhaust host memory.
             tokenizer_pipeline = TokenizationPipeline(self.tokenizer, self.model_name)
-            tokenization_result = tokenizer_pipeline.tokenize_batch(shuffled_prompts)
-
-            # Run forward pass and capture routing
-            logger.info(f"Running forward pass with routing capture...")
-            routing_data_list = self.capture.run_forward_pass(
-                token_tensors=tokenization_result["token_tensors"],
-                sequence_ids=tokenization_result["sequence_ids"],
-                token_ids_list=tokenization_result["token_ids"],
-                token_strs_list=tokenization_result["token_strs"],
-            )
-
-            # Convert routing data to parquet rows
-            parquet_rows = self._convert_to_parquet_rows(
-                routing_data_list=routing_data_list,
-                dataset_name=dataset_name,
-            )
-
-            # Write to parquet
-            logger.info(f"Writing {len(parquet_rows)} routing records to parquet...")
             output_path.parent.mkdir(parents=True, exist_ok=True)
+            total = len(shuffled_prompts)
+            logger.info(f"Processing {total} prompts in batches of {self.batch_size}...")
 
             with RoutingParquetWriter(output_path, flush_every=500) as writer:
-                for rows in self._batch_rows(parquet_rows, batch_size=len(shuffled_prompts)):
-                    writer.write_prompt(rows)
+                for start in range(0, total, self.batch_size):
+                    batch_prompts = shuffled_prompts[start:start + self.batch_size]
+                    tokenization_result = tokenizer_pipeline.tokenize_batch(batch_prompts)
+
+                    routing_data_list = self.capture.run_forward_pass(
+                        token_tensors=tokenization_result["token_tensors"],
+                        sequence_ids=tokenization_result["sequence_ids"],
+                        token_ids_list=tokenization_result["token_ids"],
+                        token_strs_list=tokenization_result["token_strs"],
+                    )
+
+                    # One write_prompt call per prompt so flush_every counts prompts
+                    for prompt_data in routing_data_list:
+                        rows = self._convert_to_parquet_rows(
+                            routing_data_list=[prompt_data],
+                            dataset_name=dataset_name,
+                        )
+                        writer.write_prompt(rows)
+                        routing_events_count += len(rows)
+
+                    prompts_processed += len(batch_prompts)
+                    if prompts_processed % (self.batch_size * 50) == 0 or prompts_processed == total:
+                        logger.info(f"  {prompts_processed}/{total} prompts, {routing_events_count} routing records")
 
             # Verify parquet file integrity
             logger.info(f"Verifying parquet file integrity...")
-            summary = verify_parquet(output_path, expected_rows=len(parquet_rows))
+            summary = verify_parquet(output_path, expected_rows=routing_events_count)
             logger.info(
                 f"✅ Run {run_id + 1} complete: "
                 f"{summary['rows']} rows, {summary['row_groups']} row groups, "
                 f"compression {summary['compression_ratio']:.2f}:1"
             )
-
-            prompts_processed = len(shuffled_prompts)
-            routing_events_count = len(parquet_rows)
 
         except Exception as e:
             logger.error(f"❌ Run {run_id + 1} failed: {e}", exc_info=True)
@@ -255,11 +261,6 @@ class FullPipeline:
 
         return True
 
-    def _batch_rows(self, rows: List[Dict], batch_size: int):
-        """Yield rows in batches."""
-        for i in range(0, len(rows), batch_size):
-            yield rows[i:i + batch_size]
-
     def run_collection(self) -> PipelineStats:
         """Execute full data collection (5 runs, both datasets)."""
         logger.info("\n" + "=" * 60)
@@ -299,6 +300,11 @@ class FullPipeline:
             self.stats.total_routing_events += events
 
             self.stats.runs_completed += 1
+
+            # Clear GPU cache between runs to prevent OOM
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                logger.debug(f"Cleared GPU cache after run {run_id + 1}")
 
         # Final validation
         self._validate_pipeline_completion()
