@@ -31,9 +31,9 @@ def create_router_hook(layer_idx, data_buffer):
     Handles both 2-value (Qwen2MoE: logits, routing_weights) and
     3-value (Mixtral: logits, selected_weights, selected_indices) gate outputs.
     """
-    call_count = [0]  # Use list to allow modification in nested function
     import logging
     logger = logging.getLogger(__name__)
+    call_count = [0]  # Use list to allow modification in nested function
 
     def hook(module, input, output):
         call_count[0] += 1
