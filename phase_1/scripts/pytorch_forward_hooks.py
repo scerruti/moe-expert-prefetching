@@ -32,13 +32,13 @@ def create_router_hook(layer_idx, data_buffer):
     3-value (Mixtral: logits, selected_weights, selected_indices) gate outputs.
     """
     call_count = [0]  # Use list to allow modification in nested function
+    import logging
+    logger = logging.getLogger(__name__)
 
     def hook(module, input, output):
         call_count[0] += 1
         if call_count[0] == 1:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.debug(f"Hook at layer {layer_idx} called for first time")
+            logger.info(f"🎣 Hook at layer {layer_idx} FIRED for first time - output type: {type(output)}")
         try:
             if isinstance(output, torch.Tensor):
                 logits = output
@@ -85,6 +85,7 @@ def register_router_hooks(model, data_buffer):
     for i, layer in enumerate(model.model.layers):
         # Qwen1.5-MoE: Router gate is at layer.mlp.gate
         router_gate = layer.mlp.gate
+        logger.debug(f"Layer {i}: gate type = {type(router_gate)}, gate = {router_gate}")
 
         # Register the hook and store the handle for potential removal later
         handle = router_gate.register_forward_hook(create_router_hook(i, data_buffer))
@@ -92,6 +93,7 @@ def register_router_hooks(model, data_buffer):
         hook_handles.append(handle)
 
     logger.info(f"✅ Registered {registered_count} router hooks on {len(model.model.layers)} layers")
+    logger.info(f"📊 Now running forward pass - watch for 🎣 hook fire messages")
     return hook_handles
 
 def test_hooks():
