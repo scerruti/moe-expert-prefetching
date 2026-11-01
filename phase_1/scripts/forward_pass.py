@@ -223,14 +223,14 @@ class ForwardPassCapture:
                 if event.get('layer_idx') == layer_idx:
                     logits = event.get('logits')
                     probabilities = event.get('probabilities')
-                    top2_indices = event.get('top2_indices')
+                    topk_indices = event.get('topk_indices')
 
                     if logits is not None and len(logits) > token_pos:
                         return {
                             "layer_index": layer_idx,
                             "expert_logits": logits[token_pos].tolist() if hasattr(logits[token_pos], "tolist") else logits[token_pos],
                             "expert_probs": probabilities[token_pos].tolist() if hasattr(probabilities[token_pos], "tolist") else probabilities[token_pos],
-                            "selected_experts": top2_indices[token_pos].tolist() if hasattr(top2_indices[token_pos], "tolist") else top2_indices[token_pos],
+                            "selected_experts": topk_indices[token_pos].tolist() if hasattr(topk_indices[token_pos], "tolist") else topk_indices[token_pos],
                             "selected_probs": probabilities[token_pos].tolist() if hasattr(probabilities[token_pos], "tolist") else probabilities[token_pos],
                         }
             # Handle tuple format (legacy)
