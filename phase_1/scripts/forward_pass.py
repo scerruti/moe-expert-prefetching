@@ -188,12 +188,16 @@ class ForwardPassCapture:
                 )
                 for layer in layers:
                     data = per_layer[layer]
+                    probs = data["probabilities"][token_pos]
+                    selected = data["topk_indices"][token_pos]
                     token_routing.layer_data.append({
                         "layer_index": layer,
                         "expert_logits": data["logits"][token_pos].tolist(),
-                        "expert_probs": data["probabilities"][token_pos].tolist(),
-                        "selected_experts": data["topk_indices"][token_pos].tolist(),
-                        "selected_probs": data["probabilities"][token_pos].tolist(),
+                        "expert_probs": probs.tolist(),
+                        "selected_experts": selected.tolist(),
+                        # norm_topk_prob is false, so these unnormalised softmax
+                        # probabilities are the routing weights the model applies
+                        "selected_probs": probs[selected.long()].tolist(),
                     })
                 prompt_routing.token_routing.append(token_routing)
 

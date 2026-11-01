@@ -88,6 +88,8 @@ class FullPipeline:
         self.config = None
         self.capture = None
         self.stats = PipelineStats()
+        # (len(expert_probs), len(selected_experts)), fixed by the first valid row
+        self._routing_widths: Optional[Tuple[int, int]] = None
 
     def load_model(self) -> None:
         """Load model and setup forward pass capture."""
@@ -258,6 +260,18 @@ class FullPipeline:
         if row["selected_probs"]:
             if not all(isinstance(p, (int, float)) and not (p != p or p == float('inf') or p == float('-inf')) for p in row["selected_probs"]):
                 return False
+
+        # One probability per selected expert
+        if len(row["selected_probs"]) != len(row["selected_experts"]):
+            return False
+
+        # Expert count and top-k come from the data, not a model constant, but
+        # must not change within a run
+        widths = (len(row["expert_probs"]), len(row["selected_experts"]))
+        if self._routing_widths is None:
+            self._routing_widths = widths
+        elif widths != self._routing_widths:
+            return False
 
         return True
 
