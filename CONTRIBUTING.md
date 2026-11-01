@@ -54,3 +54,16 @@ pytest phase_1/scripts/test_forward_pass.py -v
 
 **Prevention**: Acceptance criteria must be PROVEN with actual test execution, not just written and assumed to pass.
 
+## Tests Must Not Be Weakened to Pass
+
+**Do not loosen a test's assertion to make it pass** (for example, changing `== 4` to `>= 2`, widening a tolerance, or replacing a value check with a presence check) unless the PR states why the old assertion was wrong.
+
+**Why:** in Phase 1, the router hook test was loosened until it accepted top-2 experts (`4763418`), while the model routes top-4 (#100). Other tests checked only that data existed (`routing_events > 0`), and three bugs that corrupted the data passed every test (#99–#101).
+
+**What a test should do:** compare against an independent reference, not the code's own output. Examples: running each prompt alone versus batched (`test_extraction_rows.py`), or the model's own router logits versus the hook's selection (`test_router_topk.py`).
+
+## Continuous Integration
+
+- **CPU tests run automatically** on every pull request and on pushes to `main` and `integration/phase-1-validation` (`.github/workflows/cpu-tests.yml`), with `pytest -m "not gpu"`.
+- **GPU tests** carry the `gpu` marker (any test using the `qwen_model` fixture gets it automatically). They run on Colab with `pytest -m gpu` at the PR's final commit (#113).
+- **Every PR fills in the acceptance-criteria table** in the PR template: each criterion, the test that proves it, and where it ran.

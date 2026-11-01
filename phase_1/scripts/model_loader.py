@@ -107,6 +107,15 @@ class ModelLoader:
         logger.warning("No GPU detected, using CPU (slow)")
         return "cpu"
 
+    def load_tokenizer(self, trust_remote_code: bool = True) -> Any:
+        """Load only the tokenizer (a few MB), padding on the left like load() does."""
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            self.model_id,
+            trust_remote_code=trust_remote_code,
+            padding_side="left",
+        )
+        return self.tokenizer
+
     def load(self, trust_remote_code: bool = True) -> Tuple[Any, Any, Dict[str, Any]]:
         """
         Load model and tokenizer.
@@ -116,11 +125,7 @@ class ModelLoader:
         """
         logger.info(f"Loading {self.model_id}...")
 
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            self.model_id,
-            trust_remote_code=trust_remote_code,
-            padding_side="left",
-        )
+        self.load_tokenizer(trust_remote_code=trust_remote_code)
 
         load_kwargs = {
             "trust_remote_code": trust_remote_code,

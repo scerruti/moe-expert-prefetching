@@ -3,6 +3,11 @@
 Pytest configuration and shared fixtures for Phase 1 acceptance tests.
 
 Addresses GPU memory management to prevent CUDA OOM during test runs.
+
+Tests that need a CUDA GPU carry the `gpu` marker. CI runs `pytest -m "not gpu"`;
+GPU tests run on Colab (#113). Any test using the qwen_model fixture is marked
+`gpu`, and skipped without CUDA, automatically: loading the real model on a CPU
+machine needs about 29 GB and has crashed laptops (#87).
 """
 
 import pytest
@@ -12,6 +17,26 @@ import logging
 from model_loader import ModelLoader
 
 logger = logging.getLogger(__name__)
+
+GPU_FIXTURES = {"qwen_model"}
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "gpu: needs a CUDA GPU and the real model (run on Colab, not in CI)")
+
+
+def pytest_collection_modifyitems(config, items):
+    skip_without_gpu = pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU")
+    for item in items:
+        if GPU_FIXTURES & set(getattr(item, "fixturenames", ())):
+            item.add_marker(pytest.mark.gpu)
+            item.add_marker(skip_without_gpu)
+
+
+@pytest.fixture(scope="session")
+def qwen_tokenizer():
+    """Qwen1.5-MoE-A2.7B's tokenizer only: a few MB, no model weights, runs on CPU."""
+    return ModelLoader("qwen1.5-moe-a2.7b", device="cpu").load_tokenizer()
 
 
 @pytest.fixture(scope="function")
