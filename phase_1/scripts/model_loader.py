@@ -135,8 +135,10 @@ class ModelLoader:
                 bnb_4bit_quant_type="nf4",
             )
             load_kwargs["quantization_config"] = quantization_config
-        # Note: Qwen2MoeForCausalLM doesn't accept dtype parameter with device_map
-        # Load in default precision; dtype handling can be done post-load if needed
+        else:
+            # Without torch_dtype, transformers 4.45 loads in fp32 (~57 GB for
+            # Qwen1.5-MoE-A2.7B), which doesn't fit a 40 GB A100; fp16 is ~29 GB
+            load_kwargs["torch_dtype"] = self.dtype
 
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_id,

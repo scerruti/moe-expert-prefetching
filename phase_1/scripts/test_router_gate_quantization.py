@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
 """
-The router gate must not be quantized to 4-bit (#103).
+Phase 1 loads Qwen1.5-MoE-A2.7B unquantized, in fp16 (#103).
 
-Expert weights are 4-bit to fit the A100; the gate is tiny (24 x 2048 x 60)
-and decides the routing being studied, so it stays nn.Linear.
+Under 4-bit loading, bitsandbytes also quantized the router gate, so routing
+decisions came from 4-bit weights. fp16 fits the A100 (28.7 GB of 42.4 GB),
+so routing comes from the model as released.
 """
 
-from routing_test_helpers import requires_gpu
+import pytest
+import torch
+
+requires_gpu = pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU")
 
 
 @requires_gpu
-def test_router_gate_not_quantized(qwen_model):
-    """#103: the router gate stays nn.Linear while expert weights are 4-bit."""
+def test_model_is_not_quantized(qwen_model):
+    """#103: no layer is 4-bit; the router gate is a plain fp16 nn.Linear."""
     model, _, _ = qwen_model
-    moe = model.model.layers[0].mlp
-    assert type(moe.experts[0].gate_proj).__name__ == "Linear4bit"  # control
-    assert type(moe.gate).__name__ != "Linear4bit"
+    quantized = [name for name, m in model.named_modules() if type(m).__name__ == "Linear4bit"]
+    assert quantized == [], f"{len(quantized)} 4-bit layers, e.g. {quantized[:3]}"
+
+    gate = model.model.layers[0].mlp.gate
+    assert type(gate) is torch.nn.Linear
+    assert gate.weight.dtype == torch.float16
