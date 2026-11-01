@@ -52,8 +52,9 @@ def test_hook_registration_and_firing(qwen_model):
     tokenizer_pipeline = TokenizationPipeline(tokenizer, "qwen1.5-moe-a2.7b")
     tokenization_result = tokenizer_pipeline.tokenize_batch(SAMPLE_PROMPTS)
 
-    input_ids = tokenization_result["token_tensors"]["input_ids"]
-    attention_mask = tokenization_result["token_tensors"]["attention_mask"]
+    # The tokenizer returns CPU tensors; the model is on the GPU
+    input_ids = tokenization_result["token_tensors"]["input_ids"].to(model.device)
+    attention_mask = tokenization_result["token_tensors"]["attention_mask"].to(model.device)
 
     with torch.no_grad():
         model(input_ids=input_ids, attention_mask=attention_mask)
@@ -214,9 +215,13 @@ def test_end_to_end_pipeline(qwen_model):
     logger.info("Test: End-to-End Pipeline")
     logger.info("=" * 60)
 
+    # Reuse the fixture's model: another copy (about 29 GB) wouldn't fit beside it
+    model, tokenizer, _ = qwen_model
     routing_data = run_forward_pass_pipeline(
         model_name="qwen1.5-moe-a2.7b",
         prompts=SAMPLE_PROMPTS,
+        model=model,
+        tokenizer=tokenizer,
     )
 
     assert len(routing_data) == len(SAMPLE_PROMPTS)
@@ -232,6 +237,46 @@ def test_end_to_end_pipeline(qwen_model):
 
     logger.info(f"✅ End-to-end pipeline successful")
     return routing_data
+
+
+def test_pipeline_function_reuses_a_given_model(monkeypatch):
+    """run_forward_pass_pipeline uses a model it's given without loading another (CPU, toy model)."""
+    from model_loader import ModelLoader
+    from routing_test_helpers import make_toy_qwen
+
+    class CharTokenizer:
+        def encode(self, text):
+            return [ord(c) % 127 + 1 for c in text]
+
+        def decode(self, ids):
+            return "".join(chr(i) for i in ids)
+
+        def __call__(self, texts, **kwargs):
+            encoded = [self.encode(t) for t in texts]
+            width = max(len(e) for e in encoded)
+            ids = [[0] * (width - len(e)) + e for e in encoded]
+            mask = [[0] * (width - len(e)) + [1] * len(e) for e in encoded]
+            return {"input_ids": torch.tensor(ids), "attention_mask": torch.tensor(mask)}
+
+    def no_loading(*args, **kwargs):
+        raise AssertionError("run_forward_pass_pipeline loaded a model it was given")
+
+    monkeypatch.setattr(ModelLoader, "load", no_loading)
+    routing = run_forward_pass_pipeline(
+        "qwen1.5-moe-a2.7b", ["hi there", "a longer prompt"], device="cpu",
+        model=make_toy_qwen(), tokenizer=CharTokenizer(),
+    )
+
+    assert [p.num_tokens for p in routing] == [8, 15]
+    assert all(len(t.layer_data) == p.num_layers for p in routing for t in p.token_routing)
+
+
+def test_pipeline_function_rejects_a_model_without_its_tokenizer():
+    """Passing only one of model and tokenizer is an error, not a silent second load."""
+    import pytest
+
+    with pytest.raises(ValueError):
+        run_forward_pass_pipeline("qwen1.5-moe-a2.7b", ["hi"], model=object())
 
 
 def test_integration_with_tokenizer(qwen_model):

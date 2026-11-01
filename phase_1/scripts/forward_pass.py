@@ -296,33 +296,41 @@ def run_forward_pass_pipeline(
     model_name: str,
     prompts: List[str],
     device: Optional[str] = None,
+    model: Optional[Any] = None,
+    tokenizer: Optional[Any] = None,
 ) -> List[PromptRoutingData]:
     """
     End-to-end forward pass with routing capture.
+
+    Loads the model once, with its tokenizer from the same load, unless an
+    already-loaded model and tokenizer are passed in. (It used to load the
+    full model twice, once just for the tokenizer: about 58 GB in fp16.)
 
     Args:
         model_name: Model name (e.g., "qwen1.5-moe-a2.7b")
         prompts: List of text prompts
         device: Device to run on (default: cuda if available)
+        model, tokenizer: An already-loaded model and its tokenizer. Pass both
+            or neither.
 
     Returns:
         List of PromptRoutingData with complete routing telemetry
     """
+    if (model is None) != (tokenizer is None):
+        raise ValueError("Pass both model and tokenizer, or neither")
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # Tokenize
-    logger.info(f"Tokenizing {len(prompts)} prompts...")
-    loader = ModelLoader(model_name)
-    _, tokenizer, _ = loader.load()
-    tokenizer_pipeline = TokenizationPipeline(tokenizer, model_name)
-    tokenization_result = tokenizer_pipeline.tokenize_batch(prompts)
-
-    # Forward pass
-    logger.info("Setting up forward pass capture...")
     capture = ForwardPassCapture(model_name, device=device)
-    capture.load_model()
+    if model is None:
+        logger.info(f"Loading {model_name}...")
+        capture.load_model()
+    else:
+        capture.model, capture.tokenizer = model, tokenizer
     capture.setup_hooks()
+
+    logger.info(f"Tokenizing {len(prompts)} prompts...")
+    tokenization_result = TokenizationPipeline(capture.tokenizer, model_name).tokenize_batch(prompts)
 
     try:
         routing_data = capture.run_forward_pass(
