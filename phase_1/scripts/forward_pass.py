@@ -12,10 +12,9 @@ Executes forward pass and captures routing telemetry for Phase 1 analysis.
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import torch
-import torch.nn.functional as F
 
 from model_loader import ModelLoader
 from pytorch_forward_hooks import RoutingDataBuffer, register_router_hooks
@@ -124,7 +123,7 @@ class ForwardPassCapture:
 
         # Collect routing data from hooks
         routing_data_list = self._extract_routing_data(
-            batch_size=batch_size,
+            attention_mask=attention_mask.cpu(),
             sequence_ids=sequence_ids,
             token_ids_list=token_ids_list,
             token_strs_list=token_strs_list,
@@ -135,121 +134,77 @@ class ForwardPassCapture:
 
     def _extract_routing_data(
         self,
-        batch_size: int,
+        attention_mask: torch.Tensor,
         sequence_ids: List[int],
         token_ids_list: List[List[int]],
         token_strs_list: List[List[str]],
     ) -> List[PromptRoutingData]:
-        """Extract and structure routing data from hook buffer."""
-        routing_data_list = []
-        routing_events = self.routing_buffer.get_all()
+        """
+        Extract and structure routing data from hook buffer.
 
+        The router gate runs on flattened hidden states, so each layer's event
+        holds tensors of shape [batch_size * padded_len, num_experts]: prompt b
+        owns rows b * padded_len to (b + 1) * padded_len - 1. Prompts are
+        left-padded, so within that block the prompt's real tokens are the
+        rows where attention_mask is 1.
+        """
+        batch_size, padded_len = attention_mask.shape
+        events = {event["layer_idx"]: event for event in self.routing_buffer.get_all()}
+        layers = sorted(events)
+
+        routing_data_list = []
         for prompt_idx in range(batch_size):
             sequence_id = str(sequence_ids[prompt_idx])
             token_ids = token_ids_list[prompt_idx]
             token_strs = token_strs_list[prompt_idx]
-            num_tokens = len(token_ids)
-            num_layers = 0
 
-            # Collect all routing data for this prompt
+            real_positions = attention_mask[prompt_idx].nonzero(as_tuple=True)[0]
+            rows = prompt_idx * padded_len + real_positions
+            if len(rows) != len(token_ids):
+                raise ValueError(
+                    f"Prompt {sequence_id}: {len(token_ids)} token ids but "
+                    f"{len(rows)} unpadded positions in the batch"
+                )
+
             prompt_routing = PromptRoutingData(
                 sequence_id=sequence_id,
                 model=self.model_name,
-                num_tokens=num_tokens,
-                num_layers=0,  # Will be set below
+                num_tokens=len(token_ids),
+                num_layers=len(layers),
             )
 
-            # Extract routing data per token per layer (already retrieved before loop)
-            if routing_events:
-                num_layers = self._count_layers(routing_events)
-                prompt_routing.num_layers = num_layers
+            # This prompt's rows for every layer: [num_tokens, num_experts]
+            per_layer = {
+                layer: {key: events[layer][key][rows] for key in ("logits", "probabilities", "topk_indices")}
+                for layer in layers
+            }
 
-                for token_pos in range(min(num_tokens, 2048)):  # Limit to reasonable length
-                    token_routing = TokenRoutingData(
-                        sequence_id=sequence_id,
-                        token_id=token_ids[token_pos],
-                        token_str=token_strs[token_pos],
-                        token_position=token_pos,
-                    )
-
-                    # Collect layer data for this token
-                    for layer_idx in range(num_layers):
-                        layer_data = self._extract_layer_routing(
-                            routing_events,
-                            prompt_idx=prompt_idx,
-                            token_pos=token_pos,
-                            layer_idx=layer_idx,
-                        )
-                        if layer_data:
-                            token_routing.layer_data.append(layer_data)
-
-                    prompt_routing.token_routing.append(token_routing)
+            for token_pos, (token_id, token_str) in enumerate(zip(token_ids, token_strs)):
+                token_routing = TokenRoutingData(
+                    sequence_id=sequence_id,
+                    token_id=token_id,
+                    token_str=token_str,
+                    token_position=token_pos,
+                )
+                for layer in layers:
+                    data = per_layer[layer]
+                    token_routing.layer_data.append({
+                        "layer_index": layer,
+                        "expert_logits": data["logits"][token_pos].tolist(),
+                        "expert_probs": data["probabilities"][token_pos].tolist(),
+                        "selected_experts": data["topk_indices"][token_pos].tolist(),
+                        "selected_probs": data["probabilities"][token_pos].tolist(),
+                    })
+                prompt_routing.token_routing.append(token_routing)
 
             prompt_routing.metadata = {
                 "num_tokens_captured": len(prompt_routing.token_routing),
-                "num_layers_captured": num_layers,
+                "num_layers_captured": len(layers),
                 "device": str(self.device),
             }
-
             routing_data_list.append(prompt_routing)
 
         return routing_data_list
-
-    def _count_layers(self, routing_events: List[Tuple]) -> int:
-        """Count total number of layers from routing events."""
-        if not routing_events:
-            return 0
-        layer_indices = set()
-        for event in routing_events:
-            if isinstance(event, dict):
-                layer_idx = event.get('layer_idx')
-                if layer_idx is not None:
-                    layer_indices.add(layer_idx)
-            elif len(event) >= 4 and isinstance(event[3], int):
-                layer_indices.add(event[3])
-        return len(layer_indices)
-
-    def _extract_layer_routing(
-        self,
-        routing_events: List,
-        prompt_idx: int,
-        token_pos: int,
-        layer_idx: int,
-    ) -> Optional[Dict[str, Any]]:
-        """Extract routing data for a specific token and layer."""
-        for event in routing_events:
-            # Handle dict format from RoutingDataBuffer
-            if isinstance(event, dict):
-                if event.get('layer_idx') == layer_idx:
-                    logits = event.get('logits')
-                    probabilities = event.get('probabilities')
-                    topk_indices = event.get('topk_indices')
-
-                    if logits is not None and len(logits) > token_pos:
-                        return {
-                            "layer_index": layer_idx,
-                            "expert_logits": logits[token_pos].tolist() if hasattr(logits[token_pos], "tolist") else logits[token_pos],
-                            "expert_probs": probabilities[token_pos].tolist() if hasattr(probabilities[token_pos], "tolist") else probabilities[token_pos],
-                            "selected_experts": topk_indices[token_pos].tolist() if hasattr(topk_indices[token_pos], "tolist") else topk_indices[token_pos],
-                            "selected_probs": probabilities[token_pos].tolist() if hasattr(probabilities[token_pos], "tolist") else probabilities[token_pos],
-                        }
-            # Handle tuple format (legacy)
-            elif len(event) >= 5:
-                logits, selected_weights, selected_indices, event_layer_idx, event_batch_idx = event[:5]
-                if event_batch_idx == prompt_idx and event_layer_idx == layer_idx:
-                    if logits is not None and len(logits) > token_pos:
-                        return {
-                            "layer_index": layer_idx,
-                            "expert_logits": logits[token_pos].tolist() if hasattr(logits[token_pos], "tolist") else logits[token_pos],
-                            "expert_probs": F.softmax(
-                                torch.tensor(logits[token_pos], device=self.device),
-                                dim=-1
-                            ).tolist(),
-                            "selected_experts": selected_indices[token_pos].tolist() if hasattr(selected_indices[token_pos], "tolist") else selected_indices[token_pos],
-                            "selected_probs": selected_weights[token_pos].tolist() if hasattr(selected_weights[token_pos], "tolist") else selected_weights[token_pos],
-                        }
-
-        return None
 
     def cleanup(self) -> None:
         """Remove hooks and clean up."""
