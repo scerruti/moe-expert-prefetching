@@ -3,7 +3,7 @@
 
 import numpy as np
 
-from k_scaling import needed_buffer, ranks, smallest_m
+from k_scaling import fractional_m, needed_buffer, ranks, smallest_m
 
 
 def test_needed_buffer_is_the_extra_depth_required():
@@ -22,3 +22,10 @@ def test_smallest_m_uses_changed_decisions_only():
     assert smallest_m(histogram, 0.90) == 1
     assert smallest_m(histogram, 0.95) == 2
     assert smallest_m(histogram, 0.995) == 3
+
+
+def test_fractional_m_interpolates_between_whole_buffers():
+    histogram = np.array([1000, 50, 50])  # half of changes need m=1, the rest m=2
+    assert fractional_m(histogram, 0.50) == 1.0
+    assert fractional_m(histogram, 0.75) == 1.5
+    assert fractional_m(np.array([1000, 0, 0]), 0.95) == 0.0

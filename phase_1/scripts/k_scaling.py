@@ -19,7 +19,7 @@ import numpy as np
 import pyarrow.parquet as pq
 
 KEY = ["sequence_id", "token_position", "layer_index"]
-KS = [1, 2, 3, 4, 6, 8, 12, 16]
+KS = list(range(1, 41))  # stops well short of 60, where top-(k+m) would hit the ceiling
 TARGETS = [0.90, 0.95, 0.99]
 
 
@@ -48,11 +48,37 @@ def smallest_m(histogram, target):
     return int(np.searchsorted(np.cumsum(changed) / changed.sum(), target)) + 1 if changed.sum() else 0
 
 
+def fractional_m(histogram, target):
+    """Buffer at which coverage of changed decisions crosses target, interpolated between whole m."""
+    changed = histogram[1:]
+    if not changed.sum():
+        return 0.0
+    coverage = np.concatenate([[0.0], np.cumsum(changed) / changed.sum()])
+    m = int(np.searchsorted(coverage, target))
+    return m - 1 + (target - coverage[m - 1]) / (coverage[m] - coverage[m - 1])
+
+
+def fit_forms(k, m):
+    """Least-squares fits of m against k: {name: (a, b, r2, leave-one-out RMSE)}."""
+    forms = {"linear": k, "sqrt": np.sqrt(k), "log2": np.log2(k)}
+    results = {}
+    for name, x in forms.items():
+        b, a = np.polyfit(x, m, 1)
+        r2 = 1 - ((m - a - b * x) ** 2).sum() / ((m - m.mean()) ** 2).sum()
+        errors = []
+        for i in range(len(x)):
+            keep = np.arange(len(x)) != i
+            bi, ai = np.polyfit(x[keep], m[keep], 1)
+            errors.append(m[i] - ai - bi * x[i])
+        results[name] = (a, b, r2, float(np.sqrt(np.mean(np.square(errors)))))
+    return results
+
+
 def main(folder):
     folder = Path(folder)
     groups = {"all layers": lambda l: np.ones(len(l), bool), "layers 16-23": lambda l: l >= 16}
     hist = {g: {k: np.zeros(61, np.int64) for k in KS} for g in groups}
-    gaps = {k: [] for k in KS}
+    gaps = {g: {k: [] for k in KS} for g in groups}
     for dataset in ("gsm8k", "mbpp"):
         runs = sorted(folder.glob(f"run_*_{dataset}.parquet"))
         if len(runs) < 2:
@@ -60,9 +86,10 @@ def main(folder):
         keys, probs_a = load(runs[0])
         rank_a = ranks(probs_a)
         sorted_a = -np.sort(-probs_a, axis=1)
-        for k in KS:
-            gaps[k].append(sorted_a[:, k - 1] - sorted_a[:, k])
         layers = keys["layer_index"].to_numpy()
+        for g, select in groups.items():
+            for k in KS:
+                gaps[g][k].append((sorted_a[:, k - 1] - sorted_a[:, k])[select(layers)])
         for path in runs[1:]:
             other_keys, probs_b = load(path)
             assert keys[KEY].equals(other_keys[KEY]), f"{path.name}: rows differ from {runs[0].name}"
@@ -72,15 +99,22 @@ def main(folder):
                 for g, select in groups.items():
                     hist[g][k] += np.bincount(need[select(layers)], minlength=61)
 
+    ks = np.array(KS, dtype=float)
     for g in groups:
         print(f"{g}:")
-        print("   k  changed  median gap  m for 90%  m for 95%  m for 99%  (k+m95)/k  missed at m=2")
+        print("   k  changed  median gap  m90.frac  m95.frac  m99.frac  (k+m95)/k  missed at m=2")
         for k in KS:
             h = hist[g][k]
-            gap = np.median(np.concatenate(gaps[k]))
-            needed = [smallest_m(h, t) for t in TARGETS]
-            print(f"{k:4d}  {h[1:].sum() / h.sum():6.2%}  {gap:10.4f}  {needed[0]:9d}  {needed[1]:9d}  {needed[2]:9d}"
-                  f"  {(k + needed[1]) / k:9.2f}  {h[3:].sum() / h.sum():12.3%}")
+            gap = np.median(np.concatenate(gaps[g][k]))
+            f = [fractional_m(h, t) for t in TARGETS]
+            print(f"{k:4d}  {h[1:].sum() / h.sum():6.2%}  {gap:10.5f}  {f[0]:8.2f}  {f[1]:8.2f}  {f[2]:8.2f}"
+                  f"  {(k + f[1]) / k:9.2f}  {h[3:].sum() / h.sum():12.3%}")
+        for target in TARGETS:
+            m = np.array([fractional_m(hist[g][k], target) for k in KS])
+            for label, mask in (("k=1-40", ks >= 1), ("k=1-16", ks <= 16)):
+                text = "  ".join(f"{n}: {a:.2f}{b:+.3f}x R2={r:.3f} LOO={e:.3f}"
+                                 for n, (a, b, r, e) in fit_forms(ks[mask], m[mask]).items())
+                print(f"  fit m{int(target * 100)} {label}: {text}")
         print()
 
 
