@@ -171,3 +171,57 @@ def test_failed_ordering_is_not_counted_as_completed(tmp_path):
     assert stats.full_passes_completed == 2
     assert stats.runs_completed == 2
     assert not stats.validation_passed
+
+
+def test_pass_records_stage_timings(tmp_path):
+    """#106: each pass adds a per-stage timing breakdown to the run's stats."""
+    pipeline = toy_pipeline(batch_size=2)
+    prompts = [Prompt(f"gsm8k-train-{i:05d}", f"Question number {i}?") for i in range(5)]
+
+    pipeline.run_single_pass(0, 42, prompts, "test", tmp_path / "run.parquet")
+
+    timings = pipeline.stats.timings
+    assert {"tokenize", "forward", "extract", "convert", "write", "verify", "other"} <= set(timings)
+    assert all(seconds >= 0 for seconds in timings.values())
+    assert timings["forward"] > 0 and timings["extract"] > 0
+
+
+def test_fast_path_writes_the_same_rows_as_the_reference_path(tmp_path):
+    """#106: array-built parquet rows equal run_forward_pass + _convert_to_parquet_rows."""
+    import random
+
+    import pytest
+
+    from tokenizer import TokenizationPipeline
+
+    prompts = [Prompt(f"gsm8k-train-{i:05d}", "word " * (3 + 2 * i)) for i in range(7)]
+    pipeline = toy_pipeline(batch_size=3)
+    output = tmp_path / "fast.parquet"
+    pipeline.run_single_pass(0, 42, prompts, "gsm8k", output)
+    fast = pq.read_table(output).to_pylist()
+
+    # Reference: the same shuffle and batches, through the per-row path
+    random.seed(42)
+    shuffled = prompts.copy()
+    random.shuffle(shuffled)
+    tokenizer = TokenizationPipeline(pipeline.tokenizer, pipeline.model_name)
+    reference = []
+    for start in range(0, len(shuffled), 3):
+        batch = shuffled[start:start + 3]
+        tokens = tokenizer.tokenize_batch([p.text for p in batch], sequence_ids=[p.sequence_id for p in batch])
+        routing = pipeline.capture.run_forward_pass(
+            tokens["token_tensors"], tokens["sequence_ids"], tokens["token_ids"], tokens["token_strs"]
+        )
+        for prompt in routing:
+            reference.extend(pipeline._convert_to_parquet_rows([prompt], "gsm8k"))
+
+    key = lambda row: (row["sequence_id"], row["token_position"], row["layer_index"])
+    fast_rows = {key(r): r for r in fast}
+    reference_rows = {key(r): r for r in reference}
+    assert fast_rows.keys() == reference_rows.keys() and len(fast) == len(reference)
+    for k, ref in reference_rows.items():
+        row = fast_rows[k]
+        for column in ("token_id", "token_str", "selected_experts", "dataset_source"):
+            assert row[column] == ref[column], (k, column)
+        for column in ("expert_probs", "selected_probs"):
+            assert row[column] == pytest.approx(ref[column], abs=1e-7), (k, column)

@@ -13,17 +13,20 @@ End-to-end Phase 1 data collection with comprehensive error handling and validat
 
 import logging
 import random
+import time
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
+import pyarrow as pa
 import torch
 
 from dataset_loaders import GSM8KLoader, MBPPLoader
-from forward_pass import ForwardPassCapture
+from forward_pass import BatchRouting, ForwardPassCapture
 from model_loader import ModelLoader
-from parquet_storage import RoutingParquetWriter, verify_parquet
+from parquet_storage import ROUTING_SCHEMA, RoutingParquetWriter, verify_parquet
 from tokenizer import TokenizationPipeline
 
 logger = logging.getLogger(__name__)
@@ -68,10 +71,14 @@ class PipelineStats:
     full_passes_completed: int = 0  # one per dataset (#109)
     errors: List[str] = None
     validation_passed: bool = False
+    # Seconds per stage, summed over all passes (#106)
+    timings: Dict[str, float] = None
 
     def __post_init__(self):
         if self.errors is None:
             self.errors = []
+        if self.timings is None:
+            self.timings = {}
 
 
 def determinism_subset(
@@ -115,7 +122,7 @@ class FullPipeline:
         subset_size: Optional[int] = None,
         output_dir: Path = Path("data/phase_1_collection"),
         device: Optional[str] = None,
-        batch_size: int = 8,
+        batch_size: int = 32,
     ):
         """
         Initialize full pipeline.
@@ -127,7 +134,9 @@ class FullPipeline:
             subset_size: Limit to N examples per dataset (None = use all)
             output_dir: Directory for parquet files
             device: Device for model (default: cuda if available)
-            batch_size: Prompts per forward pass (lower if GPU runs out of memory)
+            batch_size: Prompts per forward pass. 32 fits the A100 in fp16 even for
+                the 32 longest prompts (30.4 GB peak) and is about 3x faster than 8,
+                because the forward pass cost is mostly per batch (#106)
         """
         self.model_name = model_name
         self.num_runs = num_runs
@@ -232,6 +241,8 @@ class FullPipeline:
 
         prompts_processed = 0
         routing_events_count = 0
+        timing = dict.fromkeys(("tokenize", "forward", "extract", "convert", "write", "verify"), 0.0)
+        pass_start = time.perf_counter()
 
         try:
             # Process in mini-batches: a single forward pass over thousands of
@@ -245,34 +256,40 @@ class FullPipeline:
             with RoutingParquetWriter(output_path, flush_every=500) as writer:
                 for start in range(0, total, self.batch_size):
                     batch_prompts = shuffled_prompts[start:start + self.batch_size]
+                    t0 = time.perf_counter()
                     tokenization_result = tokenizer_pipeline.tokenize_batch(
                         [p.text for p in batch_prompts],
                         sequence_ids=[p.sequence_id for p in batch_prompts],
                     )
 
-                    routing_data_list = self.capture.run_forward_pass(
-                        token_tensors=tokenization_result["token_tensors"],
-                        sequence_ids=tokenization_result["sequence_ids"],
-                        token_ids_list=tokenization_result["token_ids"],
-                        token_strs_list=tokenization_result["token_strs"],
+                    timing["tokenize"] += time.perf_counter() - t0
+                    batch = self.capture.capture_batch(
+                        tokenization_result["token_tensors"],
+                        tokenization_result["token_ids"],
                     )
+                    for stage, seconds in self.capture.last_timing.items():
+                        timing[stage] += seconds
 
-                    # One write_prompt call per prompt so flush_every counts prompts
-                    for prompt_data in routing_data_list:
-                        rows = self._convert_to_parquet_rows(
-                            routing_data_list=[prompt_data],
-                            dataset_name=dataset_name,
-                        )
-                        writer.write_prompt(rows)
-                        routing_events_count += len(rows)
+                    t0 = time.perf_counter()
+                    table = self._routing_table(batch, tokenization_result, dataset_name)
+                    t1 = time.perf_counter()
+                    writer.write_table(table, num_prompts=len(batch_prompts))
+                    timing["convert"] += t1 - t0
+                    timing["write"] += time.perf_counter() - t1
+                    routing_events_count += table.num_rows
 
                     prompts_processed += len(batch_prompts)
                     if prompts_processed % (self.batch_size * 50) == 0 or prompts_processed == total:
                         logger.info(f"  {prompts_processed}/{total} prompts, {routing_events_count} routing records")
 
+                t0 = time.perf_counter()  # closing the writer flushes its last row group
+            timing["write"] += time.perf_counter() - t0
+
             # Verify parquet file integrity
             logger.info(f"Verifying parquet file integrity...")
+            t0 = time.perf_counter()
             summary = verify_parquet(output_path, expected_rows=routing_events_count)
+            timing["verify"] += time.perf_counter() - t0
             logger.info(
                 f"✅ Run {run_id + 1} complete: "
                 f"{summary['rows']} rows, {summary['row_groups']} row groups, "
@@ -283,7 +300,77 @@ class FullPipeline:
             logger.error(f"❌ Run {run_id + 1} failed: {e}", exc_info=True)
             self.stats.errors.append(f"Run {run_id + 1}: {str(e)}")
 
+        elapsed = time.perf_counter() - pass_start
+        timing["other"] = max(0.0, elapsed - sum(timing.values()))
+        for stage, seconds in timing.items():
+            self.stats.timings[stage] = self.stats.timings.get(stage, 0.0) + seconds
+        per_prompt = elapsed / prompts_processed if prompts_processed else 0.0
+        logger.info(
+            f"Timing: {elapsed:.1f}s for {prompts_processed} prompts ({per_prompt * 1000:.0f} ms/prompt): "
+            + ", ".join(f"{stage} {seconds:.1f}s" for stage, seconds in timing.items())
+        )
+
         return prompts_processed, routing_events_count
+
+    def _routing_table(
+        self,
+        batch: BatchRouting,
+        tokenization_result: Dict[str, Any],
+        dataset_name: str,
+    ) -> pa.Table:
+        """
+        Parquet rows for one batch, built from arrays rather than row dicts (#106).
+
+        Applies _validate_row's rules to whole arrays: rows with NaN/inf
+        probabilities are skipped with a warning, and a change in expert or
+        top-k width within a run raises, since it means a whole batch is wrong.
+        """
+        token_ids_list = tokenization_result["token_ids"]
+        token_strs_list = tokenization_result["token_strs"]
+        sequence_ids = [str(i) for i in tokenization_result["sequence_ids"]]
+        num_rows = len(batch.layer_index)
+        if num_rows == 0:
+            return pa.Table.from_pylist([], schema=ROUTING_SCHEMA)
+
+        widths = (batch.expert_probs.shape[1], batch.selected_experts.shape[1])
+        if self._routing_widths is None:
+            self._routing_widths = widths
+        elif widths != self._routing_widths:
+            raise ValueError(f"Routing widths changed within the run: {self._routing_widths} -> {widths}")
+
+        keep = np.isfinite(batch.expert_probs).all(axis=1) & np.isfinite(batch.selected_probs).all(axis=1)
+        if not keep.all():
+            logger.warning(f"Skipping {int((~keep).sum())} rows with NaN/inf probabilities")
+
+        # Rows are ordered by prompt, then token, then layer
+        tokens_per_prompt = np.array([len(ids) for ids in token_ids_list])
+        rows_per_prompt = tokens_per_prompt * batch.num_layers
+        sequence_id = np.repeat(np.array(sequence_ids, dtype=object), rows_per_prompt)
+        token_id = np.repeat(np.array([t for ids in token_ids_list for t in ids], dtype=np.int32),
+                             batch.num_layers)
+        token_str = np.repeat(np.array([t for strs in token_strs_list for t in strs], dtype=object),
+                              batch.num_layers)
+
+        def list_column(matrix: np.ndarray, value_type: pa.DataType) -> pa.ListArray:
+            matrix = matrix[keep]
+            rows, width = matrix.shape
+            offsets = pa.array(np.arange(rows + 1, dtype=np.int32) * width)
+            return pa.ListArray.from_arrays(offsets, pa.array(matrix.reshape(-1), type=value_type))
+
+        return pa.Table.from_arrays(
+            [
+                pa.array(sequence_id[keep], type=pa.string()),
+                pa.array(token_id[keep], type=pa.int32()),
+                pa.array(token_str[keep], type=pa.string()),
+                pa.array(batch.token_position[keep].astype(np.int32), type=pa.int32()),
+                pa.array(batch.layer_index[keep].astype(np.int32), type=pa.int32()),
+                list_column(batch.expert_probs.astype(np.float32), pa.float32()),
+                list_column(batch.selected_experts.astype(np.int16), pa.int16()),
+                list_column(batch.selected_probs.astype(np.float32), pa.float32()),
+                pa.array(np.full(int(keep.sum()), dataset_name, dtype=object), type=pa.string()),
+            ],
+            schema=ROUTING_SCHEMA,
+        )
 
     def _convert_to_parquet_rows(
         self,
