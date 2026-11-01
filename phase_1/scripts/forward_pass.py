@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 import torch
 
 from model_loader import ModelLoader
@@ -43,6 +44,22 @@ class PromptRoutingData:
     num_layers: int
     token_routing: List[TokenRoutingData] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class BatchRouting:
+    """
+    Routing for one batch as arrays: one row per (prompt, token, layer),
+    ordered by prompt, then token position, then layer.
+    """
+    prompt_index: np.ndarray  # [rows] index into the batch
+    token_position: np.ndarray  # [rows] position within the prompt
+    layer_index: np.ndarray  # [rows]
+    expert_probs: np.ndarray  # [rows, num_experts] float32
+    selected_experts: np.ndarray  # [rows, k] int16
+    selected_probs: np.ndarray  # [rows, k] float32
+    num_layers: int
+    expert_logits: Optional[np.ndarray] = None  # [rows, num_experts], only if requested
 
 
 class ForwardPassCapture:
@@ -94,7 +111,10 @@ class ForwardPassCapture:
         token_strs_list: List[List[str]],
     ) -> List[PromptRoutingData]:
         """
-        Run forward pass and capture routing data.
+        Run forward pass and capture routing data, one object per prompt.
+
+        Built on capture_batch(); the collection pipeline uses capture_batch()
+        directly, which avoids creating Python objects per token and layer.
 
         Args:
             token_tensors: Output from tokenizer (input_ids, attention_mask)
@@ -105,6 +125,20 @@ class ForwardPassCapture:
         Returns:
             List of PromptRoutingData with complete routing telemetry
         """
+        batch = self.capture_batch(token_tensors, token_ids_list, include_logits=True)
+        start = time.perf_counter()
+        routing_data_list = self._routing_from_batch(batch, sequence_ids, token_ids_list, token_strs_list)
+        self.last_timing["extract"] += time.perf_counter() - start
+        logger.info(f"✅ Captured routing data for {len(routing_data_list)} prompts")
+        return routing_data_list
+
+    def capture_batch(
+        self,
+        token_tensors: Dict[str, torch.Tensor],
+        token_ids_list: List[List[int]],
+        include_logits: bool = False,
+    ) -> BatchRouting:
+        """Run the forward pass and return the batch's routing as arrays (#106)."""
         if self.model is None:
             raise RuntimeError("Model not loaded. Call load_model() first.")
         if self.routing_buffer is None:
@@ -112,9 +146,7 @@ class ForwardPassCapture:
 
         input_ids = token_tensors["input_ids"].to(self.device)
         attention_mask = token_tensors["attention_mask"].to(self.device)
-        batch_size = input_ids.shape[0]
-
-        logger.info(f"Running forward pass on {batch_size} prompts...")
+        logger.debug(f"Running forward pass on {input_ids.shape[0]} prompts...")
 
         start = time.perf_counter()
         with torch.no_grad():
@@ -123,73 +155,101 @@ class ForwardPassCapture:
                 attention_mask=attention_mask,
                 output_hidden_states=False,
             )
-
         if input_ids.is_cuda:
             torch.cuda.synchronize()
         forward_done = time.perf_counter()
 
-        # Collect routing data from hooks
-        routing_data_list = self._extract_routing_data(
-            attention_mask=attention_mask.cpu(),
-            sequence_ids=sequence_ids,
-            token_ids_list=token_ids_list,
-            token_strs_list=token_strs_list,
-        )
-
+        batch = self._gather_batch(attention_mask.cpu(), token_ids_list, include_logits)
         self.last_timing = {
             "forward": forward_done - start,
             "extract": time.perf_counter() - forward_done,
         }
-        logger.info(f"✅ Captured routing data for {len(routing_data_list)} prompts")
-        return routing_data_list
+        return batch
 
-    def _extract_routing_data(
+    def _gather_batch(
         self,
         attention_mask: torch.Tensor,
-        sequence_ids: List[int],
         token_ids_list: List[List[int]],
-        token_strs_list: List[List[str]],
-    ) -> List[PromptRoutingData]:
+        include_logits: bool,
+    ) -> BatchRouting:
         """
-        Extract and structure routing data from hook buffer.
+        Gather every prompt's real-token rows, for every layer, from the hook buffer.
 
         The router gate runs on flattened hidden states, so each layer's event
         holds tensors of shape [batch_size * padded_len, num_experts]: prompt b
         owns rows b * padded_len to (b + 1) * padded_len - 1. Prompts are
         left-padded, so within that block the prompt's real tokens are the
-        rows where attention_mask is 1.
+        rows where attention_mask is 1 (#99).
         """
         batch_size, padded_len = attention_mask.shape
         events = {event["layer_idx"]: event for event in self.routing_buffer.get_all()}
         layers = sorted(events)
 
-        routing_data_list = []
-        for prompt_idx in range(batch_size):
-            sequence_id = str(sequence_ids[prompt_idx])
-            token_ids = token_ids_list[prompt_idx]
-            token_strs = token_strs_list[prompt_idx]
-
-            real_positions = attention_mask[prompt_idx].nonzero(as_tuple=True)[0]
-            rows = prompt_idx * padded_len + real_positions
-            if len(rows) != len(token_ids):
+        rows, prompt_index, token_position = [], [], []
+        for b in range(batch_size):
+            real_positions = attention_mask[b].nonzero(as_tuple=True)[0]
+            if len(real_positions) != len(token_ids_list[b]):
                 raise ValueError(
-                    f"Prompt {sequence_id}: {len(token_ids)} token ids but "
-                    f"{len(rows)} unpadded positions in the batch"
+                    f"Prompt {b}: {len(token_ids_list[b])} token ids but "
+                    f"{len(real_positions)} unpadded positions in the batch"
                 )
+            rows.append(b * padded_len + real_positions)
+            prompt_index.append(torch.full((len(real_positions),), b, dtype=torch.int64))
+            token_position.append(torch.arange(len(real_positions), dtype=torch.int32))
+        rows = torch.cat(rows) if rows else torch.empty(0, dtype=torch.int64)
+        num_layers = len(layers)
+
+        def stacked(key: str) -> torch.Tensor:
+            """[tokens * layers, width]: token-major, layer-minor."""
+            if not layers:
+                return torch.empty(0, 0)
+            per_layer = torch.stack([events[layer][key][rows] for layer in layers], dim=1)
+            return per_layer.reshape(len(rows) * num_layers, -1)
+
+        probs = stacked("probabilities").float()
+        selected = stacked("topk_indices").long()
+        # norm_topk_prob is false, so these unnormalised softmax probabilities
+        # are the routing weights the model applies (#101)
+        selected_probs = torch.gather(probs, 1, selected) if probs.numel() else probs
+
+        return BatchRouting(
+            prompt_index=torch.cat(prompt_index).repeat_interleave(num_layers).numpy()
+            if prompt_index else np.empty(0, dtype=np.int64),
+            token_position=torch.cat(token_position).repeat_interleave(num_layers).numpy()
+            if token_position else np.empty(0, dtype=np.int32),
+            layer_index=np.tile(np.asarray(layers, dtype=np.int32), len(rows)),
+            expert_probs=probs.numpy(),
+            selected_experts=selected.to(torch.int16).numpy(),
+            selected_probs=selected_probs.numpy(),
+            num_layers=num_layers,
+            expert_logits=stacked("logits").float().numpy() if include_logits else None,
+        )
+
+    def _routing_from_batch(
+        self,
+        batch: BatchRouting,
+        sequence_ids: List[int],
+        token_ids_list: List[List[int]],
+        token_strs_list: List[List[str]],
+    ) -> List[PromptRoutingData]:
+        """Build per-prompt PromptRoutingData objects from a batch's arrays."""
+        routing_data_list = []
+        row = 0
+        for prompt_idx, (token_ids, token_strs) in enumerate(zip(token_ids_list, token_strs_list)):
+            sequence_id = str(sequence_ids[prompt_idx])
+            end = row + len(token_ids) * batch.num_layers
+            logits = batch.expert_logits[row:end].tolist() if batch.expert_logits is not None else None
+            probs = batch.expert_probs[row:end].tolist()
+            selected = batch.selected_experts[row:end].tolist()
+            selected_probs = batch.selected_probs[row:end].tolist()
+            layer_index = batch.layer_index[row:end].tolist()
 
             prompt_routing = PromptRoutingData(
                 sequence_id=sequence_id,
                 model=self.model_name,
                 num_tokens=len(token_ids),
-                num_layers=len(layers),
+                num_layers=batch.num_layers,
             )
-
-            # This prompt's rows for every layer: [num_tokens, num_experts]
-            per_layer = {
-                layer: {key: events[layer][key][rows] for key in ("logits", "probabilities", "topk_indices")}
-                for layer in layers
-            }
-
             for token_pos, (token_id, token_str) in enumerate(zip(token_ids, token_strs)):
                 token_routing = TokenRoutingData(
                     sequence_id=sequence_id,
@@ -197,27 +257,25 @@ class ForwardPassCapture:
                     token_str=token_str,
                     token_position=token_pos,
                 )
-                for layer in layers:
-                    data = per_layer[layer]
-                    probs = data["probabilities"][token_pos]
-                    selected = data["topk_indices"][token_pos]
-                    token_routing.layer_data.append({
-                        "layer_index": layer,
-                        "expert_logits": data["logits"][token_pos].tolist(),
-                        "expert_probs": probs.tolist(),
-                        "selected_experts": selected.tolist(),
-                        # norm_topk_prob is false, so these unnormalised softmax
-                        # probabilities are the routing weights the model applies
-                        "selected_probs": probs[selected.long()].tolist(),
-                    })
+                for i in range(token_pos * batch.num_layers, (token_pos + 1) * batch.num_layers):
+                    layer_data = {
+                        "layer_index": layer_index[i],
+                        "expert_probs": probs[i],
+                        "selected_experts": selected[i],
+                        "selected_probs": selected_probs[i],
+                    }
+                    if logits is not None:
+                        layer_data["expert_logits"] = logits[i]
+                    token_routing.layer_data.append(layer_data)
                 prompt_routing.token_routing.append(token_routing)
 
             prompt_routing.metadata = {
                 "num_tokens_captured": len(prompt_routing.token_routing),
-                "num_layers_captured": len(layers),
+                "num_layers_captured": batch.num_layers,
                 "device": str(self.device),
             }
             routing_data_list.append(prompt_routing)
+            row = end
 
         return routing_data_list
 
