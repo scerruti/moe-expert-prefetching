@@ -29,14 +29,13 @@ SAMPLE_PROMPTS = [
 ]
 
 
-def test_hook_registration_and_firing():
+def test_hook_registration_and_firing(qwen_model):
     """Test that hooks register on all layers and fire during forward pass."""
     logger.info("=" * 60)
     logger.info("Test: Hook Registration & Firing")
     logger.info("=" * 60)
 
-    loader = ModelLoader("qwen1.5-moe-a2.7b")
-    model, tokenizer, config = loader.load()
+    model, tokenizer, config = qwen_model
 
     capture = ForwardPassCapture("qwen1.5-moe-a2.7b")
     capture.model = model
@@ -68,14 +67,13 @@ def test_hook_registration_and_firing():
     return True
 
 
-def test_routing_data_format():
+def test_routing_data_format(qwen_model):
     """Test that routing data matches expected format."""
     logger.info("\n" + "=" * 60)
     logger.info("Test: Routing Data Format")
     logger.info("=" * 60)
 
-    loader = ModelLoader("qwen1.5-moe-a2.7b")
-    model, tokenizer, config = loader.load()
+    model, tokenizer, config = qwen_model
 
     capture = ForwardPassCapture("qwen1.5-moe-a2.7b")
     capture.model = model
@@ -116,14 +114,13 @@ def test_routing_data_format():
     return routing_data
 
 
-def test_token_layer_routing_extraction():
+def test_token_layer_routing_extraction(qwen_model):
     """Test extraction of routing data per token per layer."""
     logger.info("\n" + "=" * 60)
     logger.info("Test: Token-Layer Routing Extraction")
     logger.info("=" * 60)
 
-    loader = ModelLoader("qwen1.5-moe-a2.7b")
-    model, tokenizer, config = loader.load()
+    model, tokenizer, config = qwen_model
 
     capture = ForwardPassCapture("qwen1.5-moe-a2.7b")
     capture.model = model
@@ -167,7 +164,7 @@ def test_token_layer_routing_extraction():
     return routing_data
 
 
-def test_no_memory_leaks():
+def test_no_memory_leaks(qwen_model):
     """Test that forward passes don't cause memory leaks."""
     logger.info("\n" + "=" * 60)
     logger.info("Test: Memory Management")
@@ -180,8 +177,7 @@ def test_no_memory_leaks():
     initial_memory = torch.cuda.memory_allocated()
     logger.info(f"Initial GPU memory: {initial_memory / 1e9:.2f} GB")
 
-    loader = ModelLoader("qwen1.5-moe-a2.7b")
-    model, tokenizer, config = loader.load()
+    model, tokenizer, config = qwen_model
 
     capture = ForwardPassCapture("qwen1.5-moe-a2.7b", device="cuda")
     capture.model = model
@@ -212,7 +208,7 @@ def test_no_memory_leaks():
     return True
 
 
-def test_end_to_end_pipeline():
+def test_end_to_end_pipeline(qwen_model):
     """Test complete end-to-end pipeline from prompts to routing data."""
     logger.info("\n" + "=" * 60)
     logger.info("Test: End-to-End Pipeline")
@@ -238,14 +234,13 @@ def test_end_to_end_pipeline():
     return routing_data
 
 
-def test_integration_with_tokenizer():
+def test_integration_with_tokenizer(qwen_model):
     """Test that forward pass integrates correctly with tokenizer output."""
     logger.info("\n" + "=" * 60)
     logger.info("Test: Tokenizer Integration")
     logger.info("=" * 60)
 
-    loader = ModelLoader("qwen1.5-moe-a2.7b")
-    model, tokenizer, config = loader.load()
+    model, tokenizer, config = qwen_model
 
     # Tokenize
     tokenizer_pipeline = TokenizationPipeline(tokenizer, "qwen1.5-moe-a2.7b")
