@@ -171,3 +171,16 @@ def test_failed_ordering_is_not_counted_as_completed(tmp_path):
     assert stats.full_passes_completed == 2
     assert stats.runs_completed == 2
     assert not stats.validation_passed
+
+
+def test_pass_records_stage_timings(tmp_path):
+    """#106: each pass adds a per-stage timing breakdown to the run's stats."""
+    pipeline = toy_pipeline(batch_size=2)
+    prompts = [Prompt(f"gsm8k-train-{i:05d}", f"Question number {i}?") for i in range(5)]
+
+    pipeline.run_single_pass(0, 42, prompts, "test", tmp_path / "run.parquet")
+
+    timings = pipeline.stats.timings
+    assert {"tokenize", "forward", "extract", "convert", "write", "verify", "other"} <= set(timings)
+    assert all(seconds >= 0 for seconds in timings.values())
+    assert timings["forward"] > 0 and timings["extract"] > 0

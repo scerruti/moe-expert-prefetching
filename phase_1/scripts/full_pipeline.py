@@ -13,6 +13,7 @@ End-to-end Phase 1 data collection with comprehensive error handling and validat
 
 import logging
 import random
+import time
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -68,10 +69,14 @@ class PipelineStats:
     full_passes_completed: int = 0  # one per dataset (#109)
     errors: List[str] = None
     validation_passed: bool = False
+    # Seconds per stage, summed over all passes (#106)
+    timings: Dict[str, float] = None
 
     def __post_init__(self):
         if self.errors is None:
             self.errors = []
+        if self.timings is None:
+            self.timings = {}
 
 
 def determinism_subset(
@@ -232,6 +237,8 @@ class FullPipeline:
 
         prompts_processed = 0
         routing_events_count = 0
+        timing = dict.fromkeys(("tokenize", "forward", "extract", "convert", "write", "verify"), 0.0)
+        pass_start = time.perf_counter()
 
         try:
             # Process in mini-batches: a single forward pass over thousands of
@@ -245,11 +252,13 @@ class FullPipeline:
             with RoutingParquetWriter(output_path, flush_every=500) as writer:
                 for start in range(0, total, self.batch_size):
                     batch_prompts = shuffled_prompts[start:start + self.batch_size]
+                    t0 = time.perf_counter()
                     tokenization_result = tokenizer_pipeline.tokenize_batch(
                         [p.text for p in batch_prompts],
                         sequence_ids=[p.sequence_id for p in batch_prompts],
                     )
 
+                    timing["tokenize"] += time.perf_counter() - t0
                     routing_data_list = self.capture.run_forward_pass(
                         token_tensors=tokenization_result["token_tensors"],
                         sequence_ids=tokenization_result["sequence_ids"],
@@ -257,22 +266,34 @@ class FullPipeline:
                         token_strs_list=tokenization_result["token_strs"],
                     )
 
+                    for stage, seconds in getattr(self.capture, "last_timing", {}).items():
+                        timing[stage] += seconds
+
                     # One write_prompt call per prompt so flush_every counts prompts
                     for prompt_data in routing_data_list:
+                        t0 = time.perf_counter()
                         rows = self._convert_to_parquet_rows(
                             routing_data_list=[prompt_data],
                             dataset_name=dataset_name,
                         )
+                        t1 = time.perf_counter()
                         writer.write_prompt(rows)
+                        timing["convert"] += t1 - t0
+                        timing["write"] += time.perf_counter() - t1
                         routing_events_count += len(rows)
 
                     prompts_processed += len(batch_prompts)
                     if prompts_processed % (self.batch_size * 50) == 0 or prompts_processed == total:
                         logger.info(f"  {prompts_processed}/{total} prompts, {routing_events_count} routing records")
 
+                t0 = time.perf_counter()  # closing the writer flushes its last row group
+            timing["write"] += time.perf_counter() - t0
+
             # Verify parquet file integrity
             logger.info(f"Verifying parquet file integrity...")
+            t0 = time.perf_counter()
             summary = verify_parquet(output_path, expected_rows=routing_events_count)
+            timing["verify"] += time.perf_counter() - t0
             logger.info(
                 f"✅ Run {run_id + 1} complete: "
                 f"{summary['rows']} rows, {summary['row_groups']} row groups, "
@@ -282,6 +303,16 @@ class FullPipeline:
         except Exception as e:
             logger.error(f"❌ Run {run_id + 1} failed: {e}", exc_info=True)
             self.stats.errors.append(f"Run {run_id + 1}: {str(e)}")
+
+        elapsed = time.perf_counter() - pass_start
+        timing["other"] = max(0.0, elapsed - sum(timing.values()))
+        for stage, seconds in timing.items():
+            self.stats.timings[stage] = self.stats.timings.get(stage, 0.0) + seconds
+        per_prompt = elapsed / prompts_processed if prompts_processed else 0.0
+        logger.info(
+            f"Timing: {elapsed:.1f}s for {prompts_processed} prompts ({per_prompt * 1000:.0f} ms/prompt): "
+            + ", ".join(f"{stage} {seconds:.1f}s" for stage, seconds in timing.items())
+        )
 
         return prompts_processed, routing_events_count
 
