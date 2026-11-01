@@ -62,6 +62,20 @@ class BatchRouting:
     expert_logits: Optional[np.ndarray] = None  # [rows, num_experts], only if requested
 
 
+def position_ids_from_mask(attention_mask: torch.Tensor) -> torch.Tensor:
+    """
+    Number each prompt's real tokens 0, 1, 2, ... whatever left padding precedes them.
+
+    Without explicit position_ids, the model numbers positions across the padded
+    batch, so a prompt's tokens get positions that depend on how long its batch
+    neighbours are. Mathematically RoPE only sees relative positions, but in fp16
+    the shift changes rounding (#114). Same convention as Hugging Face's
+    generate(): padding positions get 1, and they're masked anyway.
+    """
+    position_ids = attention_mask.long().cumsum(-1) - 1
+    return position_ids.masked_fill(attention_mask == 0, 1)
+
+
 class ForwardPassCapture:
     """Execute forward pass with routing data capture."""
 
@@ -158,6 +172,7 @@ class ForwardPassCapture:
             _ = transformer(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
+                position_ids=position_ids_from_mask(attention_mask),
                 output_hidden_states=False,
             )
         if input_ids.is_cuda:
