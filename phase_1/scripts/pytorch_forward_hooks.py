@@ -2,6 +2,11 @@ import torch
 import torch.nn.functional as F
 import queue
 
+# Phase 1 is locked to Qwen1.5-MoE-A2.7B (PHASE_1_MODEL_DECISION.md): router
+# gate at layer.mlp.gate, 60 experts, top-4 routing. register_router_hooks
+# checks the loaded model against this so a model change fails loudly.
+QWEN_TOP_K = 4
+
 class RoutingDataBuffer:
     """
     Thread-safe buffer to store hook outputs without blocking forward execution.
@@ -9,14 +14,14 @@ class RoutingDataBuffer:
     def __init__(self):
         self.buffer = queue.Queue()
         
-    def add(self, layer_idx, logits, probabilities, top2_indices):
+    def add(self, layer_idx, logits, probabilities, topk_indices):
         # Detach and move to CPU immediately to prevent GPU memory leaks 
         # and ensure the main forward pass isn't blocked by subsequent processing.
         self.buffer.put({
             'layer_idx': layer_idx,
             'logits': logits.detach().cpu(),
             'probabilities': probabilities.detach().cpu(),
-            'top2_indices': top2_indices.detach().cpu()
+            'topk_indices': topk_indices.detach().cpu()
         })
         
     def get_all(self):
@@ -38,25 +43,24 @@ def create_router_hook(layer_idx, data_buffer):
     def hook(module, input, output):
         call_count[0] += 1
         try:
+            selected_indices = None
             if isinstance(output, torch.Tensor):
                 logits = output
-                probabilities = F.softmax(logits, dim=-1)
-                top2_indices = torch.topk(probabilities, k=2, dim=-1)[1].int()
             elif isinstance(output, tuple):
                 if len(output) == 3:
                     logits, selected_weights, selected_indices = output
-                    top2_indices = selected_indices.int()
                 elif len(output) == 2:
                     logits, routing_weights = output
-                    probabilities = F.softmax(logits, dim=-1)
-                    top2_indices = torch.topk(probabilities, k=2, dim=-1)[1].int()
                 else:
                     raise ValueError(f"Unexpected gate output tuple size: {len(output)}")
             else:
                 raise ValueError(f"Unexpected gate output type: {type(output)}")
 
-            probabilities = F.softmax(logits, dim=-1)
-            data_buffer.add(layer_idx, logits, probabilities, top2_indices)
+            # Match Qwen2MoE's own routing: softmax in float32, then top-k
+            probabilities = F.softmax(logits, dim=-1, dtype=torch.float)
+            if selected_indices is None:
+                selected_indices = torch.topk(probabilities, k=QWEN_TOP_K, dim=-1).indices
+            data_buffer.add(layer_idx, logits, probabilities, selected_indices.int())
         except Exception as e:
             logger.error(f"Hook error at layer {layer_idx}: {e}", exc_info=True)
 
@@ -73,6 +77,13 @@ def register_router_hooks(model, data_buffer):
     """
     import logging
     logger = logging.getLogger(__name__)
+
+    top_k = model.config.num_experts_per_tok
+    if top_k != QWEN_TOP_K:
+        raise ValueError(
+            f"Phase 1 hooks are locked to Qwen1.5-MoE-A2.7B (top-{QWEN_TOP_K} routing), "
+            f"but this model routes top-{top_k}. See PHASE_1_MODEL_DECISION.md."
+        )
 
     hook_handles = []
     registered_count = 0
@@ -138,7 +149,7 @@ def test_hooks():
         layer = data['layer_idx']
         logits = data['logits']
         probs = data['probabilities']
-        top2 = data['top2_indices']
+        top2 = data['topk_indices']
         
         # Check shapes
         assert logits.shape == (batch_size, seq_len, 8), "Pre-softmax logits shape mismatch."

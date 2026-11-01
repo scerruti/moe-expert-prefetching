@@ -5,7 +5,7 @@ Validates all acceptance criteria:
 - Hooks fire on all 32 layers
 - Pre-softmax logits are captured
 - Post-softmax probabilities are computed
-- Top-2 indices are extracted
+- Top-k (Qwen: 4) indices are extracted
 - No blocking in hook execution (non-blocking async collection)
 - Test validates hook outputs
 """
@@ -16,6 +16,7 @@ import pytest
 from transformers import AutoConfig, AutoModelForCausalLM
 
 from pytorch_forward_hooks import (
+    QWEN_TOP_K,
     RoutingDataBuffer,
     create_router_hook,
     register_router_hooks,
@@ -91,7 +92,7 @@ class TestRouterHooks:
             config.num_key_value_heads = 2
         # MoE config
         config.num_experts = 8
-        config.experts_per_tok = 2
+        config.num_experts_per_tok = QWEN_TOP_K
         return AutoModelForCausalLM.from_config(config)
 
     def test_hooks_fire_on_all_layers(self, toy_model):
@@ -174,8 +175,8 @@ class TestRouterHooks:
         for handle in handles:
             handle.remove()
 
-    def test_top2_indices_extracted(self, toy_model):
-        """AC: Top-2 expert indices are extracted."""
+    def test_topk_indices_extracted(self, toy_model):
+        """AC: Qwen's top-4 expert indices are extracted (#100)."""
         config = toy_model.config
         data_buffer = RoutingDataBuffer()
 
@@ -189,16 +190,13 @@ class TestRouterHooks:
 
         collected = data_buffer.get_all()
 
-        # Verify top-2 indices shape and validity
+        # Verify top-k indices shape and validity
         for data in collected:
-            top2 = data['top2_indices']
-            # Indices are flattened: [batch_size * seq_len, experts_per_tok]
-            num_experts_per_token = getattr(config, 'experts_per_tok', config.num_experts)
-            expected_k = min(2, num_experts_per_token)
-            assert top2.shape[0] == batch_size * seq_len
-            assert top2.shape[1] >= expected_k
+            topk = data['topk_indices']
+            # Indices are flattened: [batch_size * seq_len, num_experts_per_tok]
+            assert topk.shape == (batch_size * seq_len, QWEN_TOP_K)
             # Indices should be in valid range [0, num_experts)
-            assert (top2 >= 0).all() and (top2 < config.num_experts).all()
+            assert (topk >= 0).all() and (topk < config.num_experts).all()
 
         for handle in handles:
             handle.remove()
@@ -254,11 +252,11 @@ class TestRouterHooks:
             assert 'layer_idx' in data
             assert 'logits' in data
             assert 'probabilities' in data
-            assert 'top2_indices' in data
+            assert 'topk_indices' in data
             assert isinstance(data['layer_idx'], int)
             assert isinstance(data['logits'], torch.Tensor)
             assert isinstance(data['probabilities'], torch.Tensor)
-            assert isinstance(data['top2_indices'], torch.Tensor)
+            assert isinstance(data['topk_indices'], torch.Tensor)
 
         for handle in handles:
             handle.remove()
