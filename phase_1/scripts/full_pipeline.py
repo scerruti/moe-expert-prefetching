@@ -94,7 +94,8 @@ class FullPipeline:
     def load_model(self) -> None:
         """Load model and setup forward pass capture."""
         logger.info(f"Loading {self.model_name}...")
-        loader = ModelLoader(self.model_name, load_in_4bit=True)
+        # fp16, not 4-bit: fits the A100 and keeps routing unquantized (#103)
+        loader = ModelLoader(self.model_name)
         self.model, self.tokenizer, self.config = loader.load()
         self.model.to(self.device)
         self.model.eval()
