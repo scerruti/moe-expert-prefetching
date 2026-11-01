@@ -10,6 +10,7 @@ Executes forward pass and captures routing telemetry for Phase 1 analysis.
 """
 
 import logging
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -61,6 +62,7 @@ class ForwardPassCapture:
         self.tokenizer = None
         self.hooks = []
         self.routing_buffer = None
+        self.last_timing: Dict[str, float] = {}  # seconds, for the most recent run_forward_pass
 
     def load_model(self) -> None:
         """Load model and tokenizer via ModelLoader."""
@@ -114,12 +116,17 @@ class ForwardPassCapture:
 
         logger.info(f"Running forward pass on {batch_size} prompts...")
 
+        start = time.perf_counter()
         with torch.no_grad():
             _ = self.model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 output_hidden_states=False,
             )
+
+        if input_ids.is_cuda:
+            torch.cuda.synchronize()
+        forward_done = time.perf_counter()
 
         # Collect routing data from hooks
         routing_data_list = self._extract_routing_data(
@@ -129,6 +136,10 @@ class ForwardPassCapture:
             token_strs_list=token_strs_list,
         )
 
+        self.last_timing = {
+            "forward": forward_done - start,
+            "extract": time.perf_counter() - forward_done,
+        }
         logger.info(f"✅ Captured routing data for {len(routing_data_list)} prompts")
         return routing_data_list
 
