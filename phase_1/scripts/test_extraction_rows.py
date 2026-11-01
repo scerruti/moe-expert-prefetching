@@ -66,3 +66,37 @@ def test_real_model_batched_matches_single_prompt_runs(qwen_model):
     assert agree / len(reference) >= 0.98, f"top-k agreement {agree}/{len(reference)}"
     for key, layer in reference.items():
         assert len(layer["selected_experts"]) == model.config.num_experts_per_tok, key
+
+
+def test_position_ids_count_real_tokens_from_zero():
+    """#114 experiment: real tokens are numbered from 0 whatever the left padding."""
+    import torch
+
+    from forward_pass import position_ids_from_mask
+
+    mask = torch.tensor([[0, 0, 0, 1, 1], [1, 1, 1, 1, 1], [0, 1, 1, 1, 1]])
+    positions = position_ids_from_mask(mask)
+
+    for row, row_mask in zip(positions, mask):
+        assert row[row_mask == 1].tolist() == list(range(int(row_mask.sum())))
+
+
+def test_forward_pass_gives_the_model_mask_based_positions():
+    """#114 experiment: capture_batch passes position_ids built from the attention mask."""
+    import torch
+
+    from forward_pass import position_ids_from_mask
+
+    model = make_toy_qwen()
+    capture = make_capture(model)
+    seen = {}
+    handle = model.model.register_forward_pre_hook(
+        lambda module, args, kwargs: seen.update(kwargs), with_kwargs=True
+    )
+    try:
+        capture_routing(capture, TOY_PROMPTS, SEQ_IDS)
+    finally:
+        handle.remove()
+
+    mask = seen["attention_mask"]
+    assert torch.equal(seen["position_ids"], position_ids_from_mask(mask))
