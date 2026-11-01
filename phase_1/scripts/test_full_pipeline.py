@@ -44,6 +44,7 @@ def test_pipeline_initialization():
     logger.info(f"✅ Pipeline initialized on {pipeline.device}")
 
 
+@pytest.mark.gpu
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU")
 def test_model_loading():
     """Test model and hook loading."""
@@ -86,6 +87,7 @@ def test_dataset_loading():
     logger.info(f"✅ Loaded {len(gsm8k_prompts)} GSM8K + {len(mbpp_prompts)} MBPP (limited to 10)")
 
 
+@pytest.mark.gpu
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU")
 def test_single_pass_execution():
     """Test execution of a single collection pass."""
@@ -208,6 +210,7 @@ def test_row_conversion():
     logger.info(f"✅ Converted routing data to {len(rows)} parquet rows")
 
 
+@pytest.mark.gpu
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU")
 def test_full_pipeline_subset_collection():
     """Test full pipeline on 100-example subset."""
@@ -234,6 +237,7 @@ def test_full_pipeline_subset_collection():
         logger.info(f"   - Errors: {len(stats.errors)}")
 
 
+@pytest.mark.gpu
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU")
 def test_pipeline_error_handling():
     """Test that pipeline handles errors gracefully."""
@@ -269,6 +273,7 @@ def test_pipeline_error_handling():
         pipeline.capture.cleanup()
 
 
+@pytest.mark.gpu
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU")
 def test_determinism_seed_control():
     """Test that seed control enables reproducible runs."""
