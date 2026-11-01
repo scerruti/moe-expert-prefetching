@@ -75,7 +75,9 @@ $$P(e \mid x_{t}, l, \text{run}_1) \equiv P(e \mid x_{t}, l, \text{run}_n)$$
 
 ### Phase 1: Telemetry Hooks & Deterministic Data Collection
 
-**Objective:** Capture pre-softmax logits, post-softmax routing distributions, and top-$k$ assignments directly from model forward passes.
+**Objective:** Capture post-softmax routing distributions and top-$k$ assignments directly from model forward passes.
+
+*Pre-softmax logits are not stored (decided Nov 1, 2026, #108).* They equal $\log P(e \mid x)$ plus a constant per token, and every planned analysis (top-$k$, probability distributions, JSD, predictor targets) is unaffected by that constant. Storing them would roughly double the Parquet size.
 
 **Mechanism:** PyTorch forward hooks registered on router linear projection layers (`block_sparse_moe.gate`):
 
@@ -300,6 +302,7 @@ An empirical research investigation to establish a proof-of-concept for speculat
 * Integrate additional datasets (MMLU for general knowledge, conversational datasets).
 * Validate against production inference pipelines (not just simulation).
 * Extend to multimodal routing (Qwen3-VL) to test visual + text token handling.
+* **Shared-expert gate telemetry** (Qwen1.5-MoE and other shared-expert models; deferred Nov 1, 2026, #108). Each layer adds $\sigma(g_s^\top x) \cdot E_{\text{shared}}(x)$ to the routed experts' output, so the gate value shows how much each token relies on the always-on shared expert versus its routed experts. It isn't needed for prefetching, because the shared expert runs for every token and stays resident. Cost: one float per (token, layer) row, plus a forward hook on `mlp.shared_expert_gate`. **It must be captured during the routing collection run; adding it later means re-running the collection.**
 
 ---
 
