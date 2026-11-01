@@ -39,8 +39,8 @@ $$P(e \mid x_{t}, l, \text{run}_1) \equiv P(e \mid x_{t}, l, \text{run}_n)$$
 
 | Domain | Dataset | Size | Context Profile | Routing Hypothesis |
 | :--- | :--- | :--- | :--- | :--- |
-| **Mathematical Reasoning** | GSM8K | 7,473 examples (train split) | Chain-of-thought arithmetic deduction, numeric constants | High activation entropy in early layers; specialization in algorithmic/computational experts in deep layers. |
-| **Code Generation** | MBPP | 964 examples | Python syntax, indentation, logic structures | Concentrated expert allocation on syntactic tokens; domain separation from numeric reasoning paths. |
+| **Mathematical Reasoning** | GSM8K | 8,792 examples (all splits) | Chain-of-thought arithmetic deduction, numeric constants | High activation entropy in early layers; specialization in algorithmic/computational experts in deep layers. |
+| **Code Generation** | MBPP | 974 examples (all splits) | Python syntax, indentation, logic structures | Concentrated expert allocation on syntactic tokens; domain separation from numeric reasoning paths. |
 
 ### Comparative Analysis: Domain Separation vs. Invariant Structure
 
@@ -51,21 +51,23 @@ $$P(e \mid x_{t}, l, \text{run}_1) \equiv P(e \mid x_{t}, l, \text{run}_n)$$
 ### Dataset Specifics
 
 **GSM8K (Grade School Math 8K):**
-* ~8,500 crowdsourced arithmetic word problems at elementary/middle school level (7,473 train, 1,319 test). Phase 1 uses only the 7,473 train examples; test is held out.
+* ~8,500 crowdsourced arithmetic word problems at elementary/middle school level (7,473 train, 1,319 test). Phase 1 uses both splits (see *No benchmark hold-out* below).
 * Focus: Basic mathematical concepts (addition, subtraction, multiplication, division, percentages, rates, fractions).
 * Ground truth includes step-by-step solutions with intermediate calculations marked (e.g., `<<10+5=15>>`).
 * Can be sliced by step count (complexity), operator type (division, decimals), or keyword matching (money, rates/speed, fractions).
 * Variants available: GSM-Hard (larger numbers for true reasoning test), GSM8K-Socratic (explicit sub-question breakdowns).
 
 **MBPP (Mostly Basic Programming Problems):**
-* 964 crowdsourced Python coding problems in the HF release (374 train, 500 test, 90 validation); all splits are used.
+* 974 crowdsourced Python coding problems in the HF release (374 train, 500 test, 90 validation, 10 few-shot `prompt`); all splits are used.
 * **Standard for leaderboards:** MBPP-Sanitized (427 hand-verified problems with clarified prompts and valid test cases).
 * Domain breakdown: ~58% math/arithmetic, ~43% list processing, ~19% string manipulation.
 * Each problem: `{task_id, text (prompt), code (reference impl), test_list (3 assertions)}`.
 * Entry-level CS: focuses on function-level code synthesis, avoiding multi-file projects or complex OOP patterns.
 * **Modern variant:** MBPP+ (EvalPlus) generates ~35x more unit tests per problem to catch edge-case bugs; frontier models typically drop 10–15 percentage points on MBPP+.
 
-**Token Cardinality:** Processing all tokens within ~8.4k examples (7,473 GSM8K + 964 MBPP) during prefill (not just prompt text); exact token count varies by vocabulary size and natural prompt lengths in each dataset.
+**No benchmark hold-out** *(decided Nov 1, 2026, #109, on the project advisor's guidance)*: Phase 1 records how the model routes these prompts; it doesn't score the model on GSM8K or MBPP, so their test splits don't need to be held out. The hold-out that matters is for the Phase 3 predictor, which is split by prompt (see Phase 3). Each prompt's source dataset and split is kept in its `sequence_id` (#104), so the official splits can serve as the predictor's train/test split. Note that Qwen may have seen both benchmarks, test splits included, during pretraining, so routing on them may differ from routing on unseen text; a benchmark hold-out wouldn't have prevented that. The GSM8K complexity grouping (`phase_1/data/gsm8k_groups.json`) covers only the 7,473 train problems and would need extending if Phase 2 uses it on the test split.
+
+**Token Cardinality:** Processing all tokens within ~9.8k examples (8,792 GSM8K + 974 MBPP) during prefill (not just prompt text); exact token count varies by vocabulary size and natural prompt lengths in each dataset.
 
 **Randomization Strategy** *(revised Nov 1, 2026, #109)*: collect the full datasets **once**. To validate consistency, take a stratified random subset of 200 prompts per dataset and run it in **5 randomized orderings**, confirming routing is deterministic. This is what Phase 2's determinism verification (#29) compares. Because the subset runs keep batching and shuffling, they also measure any effect of batch composition on routing (#105). Earlier drafts ran the full collection 5 times; that costs about 5× the GPU time and storage, and nothing downstream uses the extra full runs.
 
@@ -171,7 +173,8 @@ where $y_i = 1$ if $i \in \mathcal{K}(x_{t+1}, l)$, else 0.
 
 **Training Regime:**
 * Use collected routing traces as training data (GSM8K + MBPP combined).
-* Split: 80% train, 10% validation, 10% test.
+* Split: 80% train, 10% validation, 10% test, **by prompt, never by row**. Tokens within a prompt are strongly correlated, and the predictor reads a window of earlier tokens, so rows from one prompt in both train and test would inflate the test score. Default: the benchmarks' official splits, recoverable from `sequence_id` (#104), which makes the split reproducible.
+* Also evaluate **across domains** (train on GSM8K, test on MBPP, and the reverse) to see whether the predictor transfers to text unlike its training data.
 * Optimize to minimize false negatives (recall-focused) to ensure prefetched experts cover true top-$k$ selections.
 
 ---
