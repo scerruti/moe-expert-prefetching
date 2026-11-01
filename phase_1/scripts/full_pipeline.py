@@ -122,7 +122,7 @@ class FullPipeline:
         subset_size: Optional[int] = None,
         output_dir: Path = Path("data/phase_1_collection"),
         device: Optional[str] = None,
-        batch_size: int = 8,
+        batch_size: int = 32,
     ):
         """
         Initialize full pipeline.
@@ -134,7 +134,9 @@ class FullPipeline:
             subset_size: Limit to N examples per dataset (None = use all)
             output_dir: Directory for parquet files
             device: Device for model (default: cuda if available)
-            batch_size: Prompts per forward pass (lower if GPU runs out of memory)
+            batch_size: Prompts per forward pass. 32 fits the A100 in fp16 even for
+                the 32 longest prompts (30.4 GB peak) and is about 3x faster than 8,
+                because the forward pass cost is mostly per batch (#106)
         """
         self.model_name = model_name
         self.num_runs = num_runs
