@@ -23,10 +23,9 @@ TOY_PAD_ID = 0
 TOY_PROMPTS = [[5, 17, 42], [7, 3, 99, 23, 61, 8, 14], [11, 2, 76, 30, 9]]
 SEQ_IDS = ["p0", "p1", "p2"]
 
-requires_gpu = pytest.mark.skipif(
-    not torch.cuda.is_available(),
-    reason="Requires GPU",
-)
+def requires_gpu(test):
+    """Mark a test as needing a CUDA GPU: excluded from CI, skipped without CUDA."""
+    return pytest.mark.gpu(pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU")(test))
 
 
 def make_toy_qwen(top_k=QWEN_TOP_K, seed=0):
