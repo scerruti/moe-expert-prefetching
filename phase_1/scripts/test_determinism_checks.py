@@ -65,3 +65,27 @@ def test_determinism_check_scales_to_large_runs(tmp_path):
 
     assert result.total_comparisons == 10_000
     assert elapsed < 2.0, f"check_determinism took {elapsed:.1f}s for 10k rows"
+
+
+def test_report_with_numpy_values_saves_as_json(tmp_path):
+    """#63: numpy scalars and numpy dict keys in a report serialise to JSON."""
+    import json
+
+    import numpy as np
+
+    from determinism_validation import ExpertActivationStats, ValidationReport
+
+    report = ValidationReport(model="qwen1.5-moe-a2.7b", dataset="gsm8k")
+    report.determinism.max_deviation = np.float32(0.125)
+    report.expert_stats = [ExpertActivationStats(
+        layer_index=0,
+        per_expert_count={np.int16(3): np.int64(7)},
+        mean_activation=np.float32(0.5),
+    )]
+    path = tmp_path / "report.json"
+
+    DeterminismValidator(tmp_path).save_report(report, path)
+
+    saved = json.loads(path.read_text())
+    assert saved["determinism"]["max_deviation"] == 0.125
+    assert saved["expert_stats"][0]["per_expert_count"] == {"3": 7}
