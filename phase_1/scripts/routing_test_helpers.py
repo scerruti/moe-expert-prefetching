@@ -25,7 +25,7 @@ SEQ_IDS = ["p0", "p1", "p2"]
 
 requires_gpu = pytest.mark.skipif(
     not torch.cuda.is_available(),
-    reason="Requires GPU and bitsandbytes for 4-bit quantization",
+    reason="Requires GPU",
 )
 
 

@@ -44,7 +44,7 @@ REAL_PROMPTS = [
 def test_real_model_batched_matches_single_prompt_runs(qwen_model):
     """#102: on the real model, batched rows match single-prompt rows.
 
-    fp16 and 4-bit kernels aren't bitwise stable across batch shapes, so near-tied
+    fp16 kernels aren't bitwise stable across batch shapes, so near-tied
     experts may swap; require top-k agreement on at least 98% of (token, layer)
     pairs. Wrong-row extraction (#99) agrees far less often.
     """
