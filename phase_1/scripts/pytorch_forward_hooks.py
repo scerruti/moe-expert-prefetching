@@ -2,6 +2,11 @@ import torch
 import torch.nn.functional as F
 import queue
 
+# Phase 1 is locked to Qwen1.5-MoE-A2.7B (PHASE_1_MODEL_DECISION.md): router
+# gate at layer.mlp.gate, 60 experts, top-4 routing. register_router_hooks
+# checks the loaded model against this so a model change fails loudly.
+QWEN_TOP_K = 4
+
 class RoutingDataBuffer:
     """
     Thread-safe buffer to store hook outputs without blocking forward execution.
@@ -9,14 +14,14 @@ class RoutingDataBuffer:
     def __init__(self):
         self.buffer = queue.Queue()
         
-    def add(self, layer_idx, logits, probabilities, top2_indices):
+    def add(self, layer_idx, logits, probabilities, topk_indices):
         # Detach and move to CPU immediately to prevent GPU memory leaks 
         # and ensure the main forward pass isn't blocked by subsequent processing.
         self.buffer.put({
             'layer_idx': layer_idx,
             'logits': logits.detach().cpu(),
             'probabilities': probabilities.detach().cpu(),
-            'top2_indices': top2_indices.detach().cpu()
+            'topk_indices': topk_indices.detach().cpu()
         })
         
     def get_all(self):
@@ -28,42 +33,74 @@ class RoutingDataBuffer:
 def create_router_hook(layer_idx, data_buffer):
     """
     Creates a forward hook to capture routing data for a specific MoE layer.
-    Gate output is a tuple: (logits, selected_weights, selected_indices)
+    Handles both 2-value (Qwen2MoE: logits, routing_weights) and
+    3-value (Mixtral: logits, selected_weights, selected_indices) gate outputs.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    call_count = [0]  # Use list to allow modification in nested function
+
     def hook(module, input, output):
-        # Gate output is a tuple: (logits, selected_weights, selected_indices)
-        logits, selected_weights, selected_indices = output
+        call_count[0] += 1
+        try:
+            selected_indices = None
+            if isinstance(output, torch.Tensor):
+                logits = output
+            elif isinstance(output, tuple):
+                if len(output) == 3:
+                    logits, selected_weights, selected_indices = output
+                elif len(output) == 2:
+                    logits, routing_weights = output
+                else:
+                    raise ValueError(f"Unexpected gate output tuple size: {len(output)}")
+            else:
+                raise ValueError(f"Unexpected gate output type: {type(output)}")
 
-        # 1. Pre-softmax logits are captured directly from the gate's output
-        # Shape: [batch_size * sequence_length, num_experts]
-
-        # 2. Post-softmax probabilities are computed
-        probabilities = F.softmax(logits, dim=-1)
-
-        # 3. Top-2 expert indices are already extracted by the gate (selected_indices)
-        # Convert to the format we need (top-2 indices per token)
-        top2_indices = selected_indices.int()
-
-        # 4. Save to thread-safe buffer
-        data_buffer.add(layer_idx, logits, probabilities, top2_indices)
+            # Match Qwen2MoE's own routing: softmax in float32, then top-k
+            probabilities = F.softmax(logits, dim=-1, dtype=torch.float)
+            if selected_indices is None:
+                selected_indices = torch.topk(probabilities, k=QWEN_TOP_K, dim=-1).indices
+            data_buffer.add(layer_idx, logits, probabilities, selected_indices.int())
+        except Exception as e:
+            logger.error(f"Hook error at layer {layer_idx}: {e}", exc_info=True)
 
     return hook
 
 def register_router_hooks(model, data_buffer):
     """
-    Registers forward hooks on all MoE router layers in the Mixtral model.
-    """
-    hook_handles = []
+    Registers forward hooks on all MoE router layers in Qwen1.5-MoE-A2.7B.
 
-    # Iterate through all layers (32 in the full 8x7B model)
+    Phase 1 Decision (PHASE_1_MODEL_DECISION.md): Locked to Qwen architecture.
+    Router gate is at layer.mlp.gate (Qwen2MoeSparseMoeBlock).
+
+    For other models, update the gate path (e.g., Mixtral: layer.block_sparse_moe.gate).
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    top_k = model.config.num_experts_per_tok
+    if top_k != QWEN_TOP_K:
+        raise ValueError(
+            f"Phase 1 hooks are locked to Qwen1.5-MoE-A2.7B (top-{QWEN_TOP_K} routing), "
+            f"but this model routes top-{top_k}. See PHASE_1_MODEL_DECISION.md."
+        )
+
+    hook_handles = []
+    registered_count = 0
+
+    # Iterate through all layers
     for i, layer in enumerate(model.model.layers):
-        # MoE router gate is at layer.mlp.gate (MixtralTopKRouter)
+        # Qwen1.5-MoE: Router gate is at layer.mlp.gate
         router_gate = layer.mlp.gate
+        logger.debug(f"Layer {i}: gate type = {type(router_gate)}, gate = {router_gate}")
 
         # Register the hook and store the handle for potential removal later
         handle = router_gate.register_forward_hook(create_router_hook(i, data_buffer))
+        registered_count += 1
         hook_handles.append(handle)
 
+    logger.info(f"✅ Registered {registered_count} router hooks on {len(model.model.layers)} layers")
+    logger.info(f"📊 Now running forward pass - watch for 🎣 hook fire messages")
     return hook_handles
 
 def test_hooks():
@@ -112,7 +149,7 @@ def test_hooks():
         layer = data['layer_idx']
         logits = data['logits']
         probs = data['probabilities']
-        top2 = data['top2_indices']
+        top2 = data['topk_indices']
         
         # Check shapes
         assert logits.shape == (batch_size, seq_len, 8), "Pre-softmax logits shape mismatch."
