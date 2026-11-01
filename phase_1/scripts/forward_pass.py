@@ -148,9 +148,14 @@ class ForwardPassCapture:
         attention_mask = token_tensors["attention_mask"].to(self.device)
         logger.debug(f"Running forward pass on {input_ids.shape[0]} prompts...")
 
+        # Run the base transformer, not the causal-LM wrapper: the router hooks
+        # are inside its layers, and the LM head's vocabulary logits (151,936
+        # per token, upcast to fp32) are never used. At batch 32 they alone
+        # needed 3.84 GiB and ran the A100 out of memory (#106).
+        transformer = getattr(self.model, "model", self.model)
         start = time.perf_counter()
         with torch.no_grad():
-            _ = self.model(
+            _ = transformer(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 output_hidden_states=False,
