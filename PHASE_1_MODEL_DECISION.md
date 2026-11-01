@@ -65,7 +65,7 @@ Stephen Cerruti (with team validation via Phase 1 collection success)
 - fp16 fits: loading with `torch_dtype=torch.float16` uses 28.7 GB of the A100's 42.4 GB (checked on Colab, Nov 1).
 - The unquantized OOM that led to 4-bit was most likely an fp32 load. On Oct 30, `67b6f1b` (08:46) removed `torch_dtype` from the loader, and without it transformers 4.45 loads in fp32 (~57 GB). 4-bit was enabled for the pipeline 2.5 hours later (`e79c64c`, 11:20). The loader passes `torch_dtype` again.
 
-**Still to confirm:** a full forward pass at batch size 8 fits in the remaining memory.
+**Confirmed (Nov 1, Colab A100):** a batch of the 8 longest prompts (about 180 tokens each) peaks at 30.5 GB of 42.4 GB, so batch size 8 fits.
 
 ## See Also
 
