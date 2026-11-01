@@ -23,6 +23,24 @@ import pyarrow.parquet as pq
 logger = logging.getLogger(__name__)
 
 
+def _json_builtin(value: Any) -> Any:
+    """Convert numpy values the json module can't serialise (#63)."""
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+def _json_keys(value: Any) -> Any:
+    """Recursively make dict keys JSON-safe (numpy integer keys become ints)."""
+    if isinstance(value, dict):
+        return {(k.item() if isinstance(k, np.generic) else k): _json_keys(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_keys(v) for v in value]
+    return value
+
+
 @dataclass
 class DeterminismCheckResult:
     """Result of bitwise determinism validation."""
@@ -442,6 +460,6 @@ class DeterminismValidator:
         }
 
         with open(output_path, "w") as f:
-            json.dump(report_dict, f, indent=2)
+            json.dump(_json_keys(report_dict), f, indent=2, default=_json_builtin)
 
         logger.info(f"✅ Report saved to {output_path}")
