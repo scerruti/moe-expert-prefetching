@@ -2,12 +2,20 @@
 """
 Determinism and consistency validation (Issue #8).
 
-Validates Phase 1 routing data quality and consistency:
-- Bitwise determinism: Same prompts run multiple times produce identical probabilities
-- Randomization consistency: Different orderings preserve top-k expert selection
-- Data quality: No NaN/inf, probabilities sum to 1.0, valid indices
-- Expert activation: Frequency analysis across layers and runs
-- Anomaly detection: Flag deviations from expected patterns
+Validates Phase 1 routing data quality and consistency (#105):
+- Determinism: the same prompts in different randomized orderings (the
+  determinism/ subset runs) give the same expert probabilities, within a
+  tolerance. Orderings change batch composition and padding, so fp16
+  results needn't be bitwise equal; the exact-equality count is reported
+  separately.
+- Randomization consistency: top-k selections agree across orderings;
+  a change is accepted only at a near-tie between the k-th and
+  (k+1)-th expert.
+- Data quality: no NaN/inf, probabilities sum to 1.0, valid indices
+- Expert activation: frequency per layer (from full/ when present)
+
+Runs are compared on (sequence_id, token_position, layer_index) with a
+vectorised join; missing or duplicated rows fail the check.
 """
 
 import json
@@ -18,9 +26,16 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 logger = logging.getLogger(__name__)
+
+KEY_COLUMNS = ["sequence_id", "token_position", "layer_index"]
+# Max |probability difference| between orderings. fp16 noise across batch
+# shapes is far smaller; a real routing change is far larger.
+DEFAULT_ATOL = 1e-2
 
 
 def _json_builtin(value: Any) -> Any:
@@ -43,11 +58,14 @@ def _json_keys(value: Any) -> Any:
 
 @dataclass
 class DeterminismCheckResult:
-    """Result of bitwise determinism validation."""
+    """Result of determinism validation across orderings."""
     passed: bool = False
-    identical_probabilities: int = 0
+    identical_probabilities: int = 0  # rows whose probabilities are exactly (bitwise) equal
     total_comparisons: int = 0
     max_deviation: float = 0.0
+    tolerance: float = DEFAULT_ATOL
+    exceeding_tolerance: int = 0  # rows with a probability difference above tolerance
+    missing_rows: int = 0  # rows present in one ordering but not the other
     notes: List[str] = field(default_factory=list)
 
 
@@ -58,6 +76,8 @@ class RandomizationCheckResult:
     matching_top_k: int = 0
     total_shared_tokens: int = 0
     match_percentage: float = 0.0
+    near_tie_flips: int = 0  # top-k changed, at a near-tie (accepted)
+    unexplained_changes: int = 0  # top-k changed without a near-tie (fails)
     notes: List[str] = field(default_factory=list)
 
 
@@ -97,19 +117,61 @@ class ValidationReport:
     summary: str = ""
 
 
+def _list_lengths(column: pa.ChunkedArray) -> np.ndarray:
+    lengths = pc.fill_null(pc.list_value_length(column), 0)
+    return lengths.to_numpy().astype(np.int64)
+
+
+def _list_values(column: pa.ChunkedArray) -> np.ndarray:
+    return column.combine_chunks().flatten().to_numpy(zero_copy_only=False)
+
+
+def _list_matrix(table: pa.Table, column: str) -> np.ndarray:
+    """[rows, width] array from a list column whose rows all have one length."""
+    lengths = _list_lengths(table.column(column))
+    if len(lengths) and (lengths != lengths[0]).any():
+        raise ValueError(f"{column} rows have different lengths")
+    width = int(lengths[0]) if len(lengths) else 0
+    return _list_values(table.column(column)).reshape(len(lengths), width)
+
+
+def _topk_boundary_gap(probs: np.ndarray, k: int) -> np.ndarray:
+    """Per row: probability of the k-th expert minus the (k+1)-th."""
+    if probs.shape[1] <= k:
+        return np.full(len(probs), np.inf)
+    ranked = -np.sort(-probs, axis=1)
+    return ranked[:, k - 1] - ranked[:, k]
+
+
 class DeterminismValidator:
     """Validate determinism and consistency of routing data."""
 
-    def __init__(self, parquet_dir: Path):
+    def __init__(self, parquet_dir: Path, atol: float = DEFAULT_ATOL):
         """
         Initialize validator with parquet files.
 
         Args:
-            parquet_dir: Directory containing phase 1 parquet files
+            parquet_dir: A collection output directory (with full/ and
+                determinism/ subdirectories) or a flat directory of run files
+            atol: Max probability difference accepted between orderings
         """
         self.parquet_dir = Path(parquet_dir)
-        self.parquet_files = list(self.parquet_dir.glob("*.parquet"))
+        self.parquet_files = sorted(self.parquet_dir.rglob("*.parquet"))
+        self.atol = atol
+        self._comparison: Optional[Tuple[DeterminismCheckResult, RandomizationCheckResult]] = None
         logger.info(f"Found {len(self.parquet_files)} parquet files")
+
+    def _files_in(self, subdir: str) -> List[Path]:
+        """Files in the named subdirectory if there are any, else all files."""
+        return [f for f in self.parquet_files if f.parent.name == subdir] or self.parquet_files
+
+    def _runs_by_dataset(self) -> Dict[str, List[Path]]:
+        runs = {}
+        for dataset in ("gsm8k", "mbpp"):
+            files = [f for f in self._files_in("determinism") if dataset in f.name]
+            if files:
+                runs[dataset] = files
+        return runs
 
     def validate_all(self) -> ValidationReport:
         """Run all validation checks."""
@@ -156,42 +218,29 @@ class DeterminismValidator:
 
         for parquet_file in self.parquet_files:
             try:
-                table = pq.read_table(parquet_file)
-                df = table.to_pandas()
+                table = pq.read_table(parquet_file, columns=["expert_probs", "selected_experts"])
+                prob_lengths = _list_lengths(table.column("expert_probs"))
+                probs = _list_values(table.column("expert_probs")).astype(np.float64)
+                result.total_rows += len(prob_lengths)
 
-                result.total_rows += len(df)
+                result.nan_count += int(np.isnan(probs).sum())
+                result.inf_count += int(np.isinf(probs).sum())
 
-                # Check expert_probs for NaN/inf
-                for idx, row in df.iterrows():
-                    expert_probs = row.get("expert_probs", [])
-                    # Convert to list if it's a PyArrow array
-                    if expert_probs is not None and not isinstance(expert_probs, list):
-                        expert_probs = list(expert_probs)
+                # Probability sums should be ~1.0 (rows summing to 0 or NaN are skipped)
+                nonempty = prob_lengths > 0
+                sums = np.zeros(len(prob_lengths))
+                if probs.size:
+                    offsets = np.concatenate([[0], np.cumsum(prob_lengths)[:-1]])
+                    sums[nonempty] = np.add.reduceat(probs, offsets[nonempty])
+                with np.errstate(invalid="ignore"):
+                    bad_sum = (sums > 0) & ~((sums >= 0.99) & (sums <= 1.01))
+                result.invalid_prob_sums += int(bad_sum.sum())
 
-                    if expert_probs:
-                        for prob in expert_probs:
-                            if isinstance(prob, (float, np.floating)):
-                                if np.isnan(prob):
-                                    result.nan_count += 1
-                                elif np.isinf(prob):
-                                    result.inf_count += 1
-
-                    # Check probability sums (should be ~1.0)
-                    if expert_probs and sum(expert_probs) > 0:
-                        prob_sum = sum(expert_probs)
-                        if not (0.99 <= prob_sum <= 1.01):  # Allow small epsilon
-                            result.invalid_prob_sums += 1
-
-                    # Check selected_experts validity
-                    selected_experts = row.get("selected_experts", [])
-                    # Convert to list if it's a PyArrow array
-                    if selected_experts is not None and not isinstance(selected_experts, list):
-                        selected_experts = list(selected_experts)
-
-                    num_experts = len(expert_probs) if expert_probs else 60
-                    for expert_idx in selected_experts:
-                        if not (0 <= expert_idx < num_experts):
-                            result.invalid_indices += 1
+                # Selected experts must index into that row's expert_probs
+                selected_lengths = _list_lengths(table.column("selected_experts"))
+                selected = _list_values(table.column("selected_experts")).astype(np.int64)
+                num_experts = np.repeat(np.where(nonempty, prob_lengths, 60), selected_lengths)
+                result.invalid_indices += int(((selected < 0) | (selected >= num_experts)).sum())
 
             except Exception as e:
                 logger.error(f"Error reading {parquet_file}: {e}")
@@ -217,184 +266,151 @@ class DeterminismValidator:
 
         return result
 
+    def _load_run(self, path: Path) -> Tuple[pd.DataFrame, np.ndarray, np.ndarray]:
+        """Keys (with a row number), expert_probs and selected_experts of one run."""
+        table = pq.read_table(path, columns=KEY_COLUMNS + ["expert_probs", "selected_experts"])
+        keys = table.select(KEY_COLUMNS).to_pandas()
+        keys["row"] = np.arange(len(keys))
+        return keys, _list_matrix(table, "expert_probs"), _list_matrix(table, "selected_experts")
+
+    def _compare_runs(self) -> Tuple[DeterminismCheckResult, RandomizationCheckResult]:
+        """Compare every ordering of each dataset with its first ordering (computed once)."""
+        if self._comparison is not None:
+            return self._comparison
+
+        det = DeterminismCheckResult(tolerance=self.atol)
+        rnd = RandomizationCheckResult()
+        problems = []
+
+        runs = self._runs_by_dataset()
+        if not runs:
+            problems.append("No GSM8K or MBPP run files to compare")
+        for dataset, files in runs.items():
+            if len(files) < 2:
+                problems.append(f"{dataset}: {len(files)} run, at least 2 orderings are needed")
+                continue
+            try:
+                ref_keys, ref_probs, ref_selected = self._load_run(files[0])
+                if ref_keys.duplicated(KEY_COLUMNS).any():
+                    problems.append(f"{files[0].name}: duplicate (sequence_id, position, layer) rows")
+                for other in files[1:]:
+                    keys, probs, selected = self._load_run(other)
+                    if keys.duplicated(KEY_COLUMNS).any():
+                        problems.append(f"{other.name}: duplicate (sequence_id, position, layer) rows")
+                    if probs.shape[1] != ref_probs.shape[1] or selected.shape[1] != ref_selected.shape[1]:
+                        problems.append(f"{other.name}: row widths differ from {files[0].name}")
+                        continue
+
+                    merged = ref_keys.merge(keys, on=KEY_COLUMNS, how="outer",
+                                            suffixes=("_a", "_b"), indicator=True)
+                    both = merged["_merge"] == "both"
+                    missing = int((~both).sum())
+                    if missing:
+                        det.missing_rows += missing
+                        problems.append(f"{other.name}: {missing} rows not in both {files[0].name} and {other.name}")
+
+                    ia = merged.loc[both, "row_a"].to_numpy(dtype=np.int64)
+                    ib = merged.loc[both, "row_b"].to_numpy(dtype=np.int64)
+                    pa_, pb_ = ref_probs[ia].astype(np.float64), probs[ib].astype(np.float64)
+
+                    deviation = np.abs(pa_ - pb_).max(axis=1) if pa_.size else np.zeros(len(ia))
+                    det.total_comparisons += len(ia)
+                    det.identical_probabilities += int((ref_probs[ia] == probs[ib]).all(axis=1).sum())
+                    det.exceeding_tolerance += int((deviation > self.atol).sum())
+                    if len(deviation):
+                        det.max_deviation = max(det.max_deviation, float(deviation.max()))
+
+                    same = (np.sort(ref_selected[ia], axis=1) == np.sort(selected[ib], axis=1)).all(axis=1)
+                    k = ref_selected.shape[1]
+                    near_tie = ((_topk_boundary_gap(pa_, k) <= 2 * self.atol) |
+                                (_topk_boundary_gap(pb_, k) <= 2 * self.atol))
+                    rnd.total_shared_tokens += len(ia)
+                    rnd.matching_top_k += int(same.sum())
+                    rnd.near_tie_flips += int((~same & near_tie).sum())
+                    rnd.unexplained_changes += int((~same & ~near_tie).sum())
+            except Exception as e:
+                problems.append(f"{dataset}: {e}")
+
+        det.notes.extend(problems)
+        rnd.notes.extend(problems)
+        compared = det.total_comparisons > 0
+        det.passed = compared and not problems and det.exceeding_tolerance == 0
+        rnd.passed = compared and not problems and rnd.unexplained_changes == 0
+        if rnd.total_shared_tokens:
+            rnd.match_percentage = 100.0 * rnd.matching_top_k / rnd.total_shared_tokens
+
+        self._comparison = (det, rnd)
+        return self._comparison
+
     def check_determinism(self) -> DeterminismCheckResult:
         """
-        Check bitwise determinism: same prompts run 5x produce identical probabilities.
-
-        Compares all runs of same dataset to detect any variation.
+        Same prompts in different orderings give the same expert probabilities,
+        within self.atol. Fails on missing data, missing or duplicate rows,
+        or any row differing by more than the tolerance.
         """
         logger.info("Checking determinism...")
-
-        result = DeterminismCheckResult()
-
-        # Group files by dataset
-        gsm8k_files = [f for f in self.parquet_files if "gsm8k" in f.name]
-        mbpp_files = [f for f in self.parquet_files if "mbpp" in f.name]
-
-        for dataset_files in [gsm8k_files, mbpp_files]:
-            if len(dataset_files) < 2:
-                continue
-
-            # Load data from each run
-            datasets = []
-            for file in sorted(dataset_files):
-                df = pq.read_table(file).to_pandas()
-                datasets.append(df)
-
-            # Compare across runs
-            for i in range(len(datasets) - 1):
-                df1 = datasets[i]
-                df2 = datasets[i + 1]
-
-                # Compare by sequence_id, token_position, layer_index
-                for _, row1 in df1.iterrows():
-                    key = (row1["sequence_id"], row1["token_position"], row1["layer_index"])
-                    matches = df2[
-                        (df2["sequence_id"] == key[0]) &
-                        (df2["token_position"] == key[1]) &
-                        (df2["layer_index"] == key[2])
-                    ]
-
-                    if len(matches) > 0:
-                        row2 = matches.iloc[0]
-                        result.total_comparisons += 1
-
-                        # Compare probabilities (allowing for float precision)
-                        probs1 = row1.get("expert_probs", [])
-                        probs2 = row2.get("expert_probs", [])
-                        # Convert to lists if they're PyArrow arrays
-                        if probs1 is not None and not isinstance(probs1, list):
-                            probs1 = list(probs1)
-                        if probs2 is not None and not isinstance(probs2, list):
-                            probs2 = list(probs2)
-
-                        if probs1 and probs2:
-                            max_diff = max(abs(p1 - p2) for p1, p2 in zip(probs1, probs2))
-                            result.max_deviation = max(result.max_deviation, max_diff)
-
-                            if max_diff < 1e-6:  # Bitwise identical (within float epsilon)
-                                result.identical_probabilities += 1
-
-        # Determine pass/fail
-        if result.total_comparisons > 0:
-            match_rate = result.identical_probabilities / result.total_comparisons
-            result.passed = match_rate >= 0.99  # 99% threshold
-
-            if result.passed:
-                logger.info(f"✅ Determinism check PASSED ({match_rate*100:.1f}% match rate)")
-            else:
-                logger.error(f"❌ Determinism check FAILED ({match_rate*100:.1f}% match rate)")
-                logger.error(f"   Max deviation: {result.max_deviation:.2e}")
+        result = self._compare_runs()[0]
+        if result.passed:
+            logger.info(
+                f"✅ Determinism check PASSED ({result.total_comparisons} rows, "
+                f"max deviation {result.max_deviation:.2e} <= {result.tolerance:.0e}; "
+                f"{result.identical_probabilities} bitwise identical)"
+            )
         else:
-            logger.warning("⚠️  Insufficient data for determinism check")
-            result.passed = True  # Pass if can't check
-
+            logger.error(
+                f"❌ Determinism check FAILED: {result.exceeding_tolerance} rows above "
+                f"{result.tolerance:.0e}, max deviation {result.max_deviation:.2e}; {result.notes}"
+            )
         return result
 
     def check_randomization_consistency(self) -> RandomizationCheckResult:
         """
-        Check randomization consistency: different orderings preserve top-k selection.
-
-        Verifies that the top-2 experts are the same for identical tokens across runs.
+        Top-k selections agree across orderings. A change is accepted only at
+        a near-tie (k-th and (k+1)-th probabilities within 2 * atol).
         """
         logger.info("Checking randomization consistency...")
-
-        result = RandomizationCheckResult()
-
-        # Load all data
-        all_data = []
-        for parquet_file in self.parquet_files:
-            df = pq.read_table(parquet_file).to_pandas()
-            all_data.append(df)
-
-        if len(all_data) < 2:
-            logger.warning("⚠️  Insufficient runs for randomization check")
-            return result
-
-        # Merge all data
-        combined_df = pd.concat(all_data, ignore_index=True)
-
-        # Group by token and layer
-        for (seq_id, token_pos, layer_idx), group in combined_df.groupby(
-            ["sequence_id", "token_position", "layer_index"]
-        ):
-            if len(group) >= 2:
-                result.total_shared_tokens += 1
-
-                # Get top-2 experts for each occurrence
-                top_experts_list = []
-                for _, row in group.iterrows():
-                    selected = row.get("selected_experts", [])
-                    # Convert to list if it's a PyArrow array
-                    if selected is not None and not isinstance(selected, list):
-                        selected = list(selected)
-                    # Convert to Python ints for comparison
-                    selected = [int(x) for x in selected]
-                    selected = sorted(selected)[:2]
-                    top_experts_list.append(selected)
-
-                # Check if all have same top-2
-                if len(set(tuple(t) for t in top_experts_list)) == 1:
-                    result.matching_top_k += 1
-
-        # Determine pass/fail
-        if result.total_shared_tokens > 0:
-            result.match_percentage = (result.matching_top_k / result.total_shared_tokens) * 100
-            result.passed = result.match_percentage >= 99.0
-
-            if result.passed:
-                logger.info(f"✅ Randomization check PASSED ({result.match_percentage:.1f}% match)")
-            else:
-                logger.error(f"❌ Randomization check FAILED ({result.match_percentage:.1f}% match)")
+        result = self._compare_runs()[1]
+        if result.passed:
+            logger.info(
+                f"✅ Randomization check PASSED ({result.match_percentage:.2f}% identical top-k, "
+                f"{result.near_tie_flips} near-tie flips)"
+            )
         else:
-            logger.warning("⚠️  No shared tokens found for randomization check")
-            result.passed = True
-
+            logger.error(
+                f"❌ Randomization check FAILED: {result.unexplained_changes} top-k changes "
+                f"without a near-tie; {result.notes}"
+            )
         return result
 
     def analyze_expert_activation(self) -> List[ExpertActivationStats]:
-        """Analyze expert activation frequencies across all layers."""
+        """Expert activation frequency per layer, from full/ when present."""
         logger.info("Analyzing expert activation...")
 
-        layer_stats = {}
+        pair_counts: Dict[Tuple[int, int], int] = {}
+        for parquet_file in self._files_in("full"):
+            table = pq.read_table(parquet_file, columns=["layer_index", "selected_experts"])
+            lengths = _list_lengths(table.column("selected_experts"))
+            layers = np.repeat(table.column("layer_index").to_numpy(), lengths).astype(np.int64)
+            experts = _list_values(table.column("selected_experts")).astype(np.int64)
+            pairs, counts = np.unique(np.stack([layers, experts], axis=1), axis=0, return_counts=True) \
+                if len(experts) else (np.empty((0, 2), dtype=np.int64), np.empty(0, dtype=np.int64))
+            for (layer, expert), count in zip(pairs.tolist(), counts.tolist()):
+                pair_counts[(layer, expert)] = pair_counts.get((layer, expert), 0) + count
 
-        for parquet_file in self.parquet_files:
-            df = pq.read_table(parquet_file).to_pandas()
+        layer_stats: Dict[int, Dict[int, int]] = {}
+        for (layer, expert), count in pair_counts.items():
+            layer_stats.setdefault(layer, {})[expert] = count
 
-            for _, row in df.iterrows():
-                layer_idx = int(row.get("layer_index", -1))
-                selected_experts = row.get("selected_experts", [])
-                # Convert to list if it's a PyArrow array
-                if selected_experts is not None and not isinstance(selected_experts, list):
-                    selected_experts = list(selected_experts)
-
-                if layer_idx not in layer_stats:
-                    layer_stats[layer_idx] = {}
-
-                for expert_idx in selected_experts:
-                    expert_idx = int(expert_idx)  # Convert PyArrow types to Python int
-                    if expert_idx not in layer_stats[layer_idx]:
-                        layer_stats[layer_idx][expert_idx] = 0
-                    layer_stats[layer_idx][expert_idx] += 1
-
-        # Convert to stats objects
         stats_list = []
-        for layer_idx in sorted(layer_stats.keys()):
+        for layer_idx in sorted(layer_stats):
             expert_counts = layer_stats[layer_idx]
             total = sum(expert_counts.values())
-
             stats = ExpertActivationStats(layer_index=layer_idx, total_activations=total)
             stats.per_expert_count = expert_counts
-
-            # Calculate frequencies
-            for expert_idx, count in expert_counts.items():
-                stats.activation_frequency[expert_idx] = count / total if total > 0 else 0
-
-            # Calculate mean and std
+            stats.activation_frequency = {e: c / total for e, c in expert_counts.items()}
             frequencies = list(stats.activation_frequency.values())
-            stats.mean_activation = np.mean(frequencies) if frequencies else 0
-            stats.std_activation = np.std(frequencies) if frequencies else 0
-
+            stats.mean_activation = float(np.mean(frequencies))
+            stats.std_activation = float(np.std(frequencies))
             stats_list.append(stats)
 
         logger.info(f"✅ Analyzed {len(stats_list)} layers")
@@ -424,15 +440,21 @@ class DeterminismValidator:
         else:
             lines.append(f"❌ Data Quality: FAILED")
 
-        if report.determinism.passed:
-            lines.append(f"✅ Determinism: PASSED ({report.determinism.identical_probabilities}/{report.determinism.total_comparisons} match)")
-        else:
-            lines.append(f"❌ Determinism: FAILED")
+        det = report.determinism
+        verdict = "✅ Determinism: PASSED" if det.passed else "❌ Determinism: FAILED"
+        lines.append(
+            f"{verdict} ({det.total_comparisons} rows; max deviation {det.max_deviation:.2e}, "
+            f"tolerance {det.tolerance:.0e}; {det.identical_probabilities} bitwise identical)"
+        )
 
-        if report.randomization.passed:
-            lines.append(f"✅ Randomization: PASSED ({report.randomization.match_percentage:.1f}%)")
-        else:
-            lines.append(f"❌ Randomization: FAILED")
+        rnd = report.randomization
+        verdict = "✅ Randomization: PASSED" if rnd.passed else "❌ Randomization: FAILED"
+        lines.append(
+            f"{verdict} ({rnd.match_percentage:.2f}% identical top-k; {rnd.near_tie_flips} "
+            f"near-tie flips; {rnd.unexplained_changes} unexplained changes)"
+        )
+        for note in det.notes:
+            lines.append(f"   - {note}")
 
         if report.overall_passed:
             lines.append("")
