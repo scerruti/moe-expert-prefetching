@@ -28,6 +28,13 @@ from tokenizer import TokenizationPipeline
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class Prompt:
+    """One prompt to collect routing for, with a stable ID (#104)."""
+    sequence_id: str  # "<dataset>-<split>-<example>", e.g. "gsm8k-test-01234"
+    text: str
+
+
 @dataclass
 class RunConfig:
     """Configuration for one randomized run."""
@@ -108,16 +115,24 @@ class FullPipeline:
 
         logger.info(f"✅ Model loaded, hooks registered")
 
-    def load_datasets(self) -> Tuple[List[str], List[str]]:
-        """Load GSM8K and MBPP datasets."""
+    def load_datasets(self) -> Tuple[List[Prompt], List[Prompt]]:
+        """
+        Load GSM8K and MBPP prompts with stable sequence IDs.
+
+        IDs name the dataset, split and example, so every routing row can be
+        traced back to its source, in any session: GSM8K uses the index
+        within its split, MBPP its task_id (unique across splits).
+        """
         logger.info("Loading datasets...")
 
-        gsm8k_loader = GSM8KLoader()
-        mbpp_loader = MBPPLoader()
-
-        # Loaders return example dicts; the pipeline needs the prompt text
-        gsm8k_prompts = [ex["question"] for ex in gsm8k_loader.load()]
-        mbpp_prompts = [ex["prompt"] for ex in mbpp_loader.load()]
+        gsm8k_prompts = [
+            Prompt(f"gsm8k-train-{ex['example_id']:05d}", ex["question"])
+            for ex in GSM8KLoader().load(split="train")
+        ]
+        mbpp_prompts = [
+            Prompt(f"mbpp-train-{ex['task_id']}", ex["prompt"])
+            for ex in MBPPLoader().load(split="train")
+        ]
 
         if self.subset_size:
             gsm8k_prompts = gsm8k_prompts[:self.subset_size]
@@ -130,7 +145,7 @@ class FullPipeline:
         self,
         run_id: int,
         seed: int,
-        prompts: List[str],
+        prompts: List[Prompt],
         dataset_name: str,
         output_path: Path,
     ) -> Tuple[int, int]:
@@ -173,7 +188,10 @@ class FullPipeline:
             with RoutingParquetWriter(output_path, flush_every=500) as writer:
                 for start in range(0, total, self.batch_size):
                     batch_prompts = shuffled_prompts[start:start + self.batch_size]
-                    tokenization_result = tokenizer_pipeline.tokenize_batch(batch_prompts)
+                    tokenization_result = tokenizer_pipeline.tokenize_batch(
+                        [p.text for p in batch_prompts],
+                        sequence_ids=[p.sequence_id for p in batch_prompts],
+                    )
 
                     routing_data_list = self.capture.run_forward_pass(
                         token_tensors=tokenization_result["token_tensors"],
