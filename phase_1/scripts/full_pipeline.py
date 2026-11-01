@@ -13,6 +13,7 @@ End-to-end Phase 1 data collection with comprehensive error handling and validat
 
 import logging
 import random
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -26,6 +27,18 @@ from parquet_storage import RoutingParquetWriter, verify_parquet
 from tokenizer import TokenizationPipeline
 
 logger = logging.getLogger(__name__)
+
+# Phase 1 scope (#109): every split of both datasets. Phase 1 records routing;
+# it doesn't score the model on these benchmarks, so nothing is held out.
+GSM8K_SPLITS = ("train", "test")
+MBPP_SPLITS = ("train", "test", "validation", "prompt")
+
+# Determinism check (#109): a stratified sample of each dataset, run in
+# num_runs randomized orderings. Phase 2's determinism verification (#29)
+# compares these.
+DETERMINISM_SUBSET_SIZE = 200
+DETERMINISM_SUBSET_SEED = 2026
+RUN_SEEDS = [42, 123, 456, 789, 999]
 
 
 @dataclass(frozen=True)
@@ -51,13 +64,45 @@ class PipelineStats:
     total_prompts_processed: int = 0
     total_tokens_processed: int = 0
     total_routing_events: int = 0
-    runs_completed: int = 0
+    runs_completed: int = 0  # determinism-subset orderings completed for both datasets
+    full_passes_completed: int = 0  # one per dataset (#109)
     errors: List[str] = None
     validation_passed: bool = False
 
     def __post_init__(self):
         if self.errors is None:
             self.errors = []
+
+
+def determinism_subset(
+    prompts: List[Prompt],
+    size: int = DETERMINISM_SUBSET_SIZE,
+    seed: int = DETERMINISM_SUBSET_SEED,
+) -> List[Prompt]:
+    """
+    Stratified random sample for the determinism check (#109).
+
+    Each split (read from "<dataset>-<split>-<example>" IDs) gets a share of
+    `size` proportional to its size, using largest remainders so the shares
+    add up exactly. The same prompts and seed always give the same subset,
+    returned sorted by sequence ID; each ordering run shuffles it.
+    """
+    if len(prompts) <= size:
+        return sorted(prompts, key=lambda p: p.sequence_id)
+
+    by_split = defaultdict(list)
+    for p in sorted(prompts, key=lambda p: p.sequence_id):
+        by_split[p.sequence_id.split("-")[1]].append(p)
+
+    quotas = {split: size * len(group) / len(prompts) for split, group in by_split.items()}
+    counts = {split: int(q) for split, q in quotas.items()}
+    by_remainder = sorted(quotas, key=lambda split: quotas[split] - counts[split], reverse=True)
+    for split in by_remainder[: size - sum(counts.values())]:
+        counts[split] += 1
+
+    rng = random.Random(seed)
+    sample = [p for split in sorted(by_split) for p in rng.sample(by_split[split], counts[split])]
+    return sorted(sample, key=lambda p: p.sequence_id)
 
 
 class FullPipeline:
@@ -77,7 +122,8 @@ class FullPipeline:
 
         Args:
             model_name: Model to use for collection
-            num_runs: Number of randomized runs (default 5)
+            num_runs: Randomized orderings of the determinism subset (default 5).
+                The full datasets are collected once (#109).
             subset_size: Limit to N examples per dataset (None = use all)
             output_dir: Directory for parquet files
             device: Device for model (default: cuda if available)
@@ -125,14 +171,23 @@ class FullPipeline:
         """
         logger.info("Loading datasets...")
 
+        gsm8k_loader = GSM8KLoader()
+        mbpp_loader = MBPPLoader()
         gsm8k_prompts = [
-            Prompt(f"gsm8k-train-{ex['example_id']:05d}", ex["question"])
-            for ex in GSM8KLoader().load(split="train")
+            Prompt(f"gsm8k-{split}-{ex['example_id']:05d}", ex["question"])
+            for split in GSM8K_SPLITS
+            for ex in gsm8k_loader.load(split=split)
         ]
         mbpp_prompts = [
-            Prompt(f"mbpp-train-{ex['task_id']}", ex["prompt"])
-            for ex in MBPPLoader().load(split="train")
+            Prompt(f"mbpp-{split}-{ex['task_id']}", ex["prompt"])
+            for split in MBPP_SPLITS
+            for ex in mbpp_loader.load(split=split)
         ]
+
+        for name, prompts in (("GSM8K", gsm8k_prompts), ("MBPP", mbpp_prompts)):
+            ids = [p.sequence_id for p in prompts]
+            if len(set(ids)) != len(ids):
+                raise ValueError(f"{name} sequence IDs are not unique")
 
         if self.subset_size:
             gsm8k_prompts = gsm8k_prompts[:self.subset_size]
@@ -148,6 +203,7 @@ class FullPipeline:
         prompts: List[Prompt],
         dataset_name: str,
         output_path: Path,
+        label: Optional[str] = None,
     ) -> Tuple[int, int]:
         """
         Execute one randomized collection pass.
@@ -158,12 +214,13 @@ class FullPipeline:
             prompts: List of prompts to process
             dataset_name: Dataset name for metadata
             output_path: Path to write parquet file
+            label: Header for this pass in the log (default "Run i/num_runs")
 
         Returns:
             Tuple of (prompts_processed, total_routing_events)
         """
         logger.info(f"\n{'='*60}")
-        logger.info(f"Run {run_id + 1}/{self.num_runs} (seed={seed})")
+        logger.info(f"{label or f'Run {run_id + 1}/{self.num_runs}'} (seed={seed})")
         logger.info(f"{'='*60}")
 
         random.seed(seed)
@@ -295,49 +352,47 @@ class FullPipeline:
         return True
 
     def run_collection(self) -> PipelineStats:
-        """Execute full data collection (5 runs, both datasets)."""
+        """
+        Execute Phase 1 collection (#109).
+
+        1. One full pass over each dataset, written to output_dir/full/.
+        2. A stratified DETERMINISM_SUBSET_SIZE-prompt sample of each dataset,
+           run in num_runs randomized orderings, written to
+           output_dir/determinism/ for Phase 2's determinism check (#29).
+        """
         logger.info("\n" + "=" * 60)
         logger.info("PHASE 1 FULL PIPELINE EXECUTION")
         logger.info("=" * 60)
 
         self.load_model()
-        gsm8k_prompts, mbpp_prompts = self.load_datasets()
+        datasets = dict(zip(("gsm8k", "mbpp"), self.load_datasets()))
 
-        run_seeds = [42, 123, 456, 789, 999]  # Fixed seeds for reproducibility
+        for dataset_name, prompts in datasets.items():
+            if self._run_pass(
+                run_id=0,
+                seed=RUN_SEEDS[0],
+                prompts=prompts,
+                dataset_name=dataset_name,
+                output_path=self.output_dir / "full" / f"{dataset_name}.parquet",
+                label=f"Full pass: {dataset_name} ({len(prompts)} prompts)",
+            ):
+                self.stats.full_passes_completed += 1
 
+        subsets = {name: determinism_subset(prompts) for name, prompts in datasets.items()}
         for run_id in range(self.num_runs):
-            seed = run_seeds[run_id]
-
-            # GSM8K pass
-            gsm8k_output = self.output_dir / f"run_{run_id}_gsm8k.parquet"
-            prompts, events = self.run_single_pass(
-                run_id=run_id,
-                seed=seed,
-                prompts=gsm8k_prompts,
-                dataset_name="gsm8k",
-                output_path=gsm8k_output,
-            )
-            self.stats.total_prompts_processed += prompts
-            self.stats.total_routing_events += events
-
-            # MBPP pass
-            mbpp_output = self.output_dir / f"run_{run_id}_mbpp.parquet"
-            prompts, events = self.run_single_pass(
-                run_id=run_id,
-                seed=seed,
-                prompts=mbpp_prompts,
-                dataset_name="mbpp",
-                output_path=mbpp_output,
-            )
-            self.stats.total_prompts_processed += prompts
-            self.stats.total_routing_events += events
-
-            self.stats.runs_completed += 1
-
-            # Clear GPU cache between runs to prevent OOM
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                logger.debug(f"Cleared GPU cache after run {run_id + 1}")
+            succeeded = [
+                self._run_pass(
+                    run_id=run_id,
+                    seed=RUN_SEEDS[run_id],
+                    prompts=subset,
+                    dataset_name=dataset_name,
+                    output_path=self.output_dir / "determinism" / f"run_{run_id}_{dataset_name}.parquet",
+                    label=f"Determinism ordering {run_id + 1}/{self.num_runs}: {dataset_name}",
+                )
+                for dataset_name, subset in subsets.items()
+            ]
+            if all(succeeded):
+                self.stats.runs_completed += 1
 
         # Final validation
         self._validate_pipeline_completion()
@@ -347,7 +402,8 @@ class FullPipeline:
         logger.info("\n" + "=" * 60)
         logger.info("PIPELINE EXECUTION SUMMARY")
         logger.info("=" * 60)
-        logger.info(f"Runs completed: {self.stats.runs_completed}/{self.num_runs}")
+        logger.info(f"Full passes completed: {self.stats.full_passes_completed}/2")
+        logger.info(f"Determinism orderings completed: {self.stats.runs_completed}/{self.num_runs}")
         logger.info(f"Prompts processed: {self.stats.total_prompts_processed}")
         logger.info(f"Routing events captured: {self.stats.total_routing_events}")
         logger.info(f"Errors: {len(self.stats.errors)}")
@@ -361,8 +417,26 @@ class FullPipeline:
 
         return self.stats
 
+    def _run_pass(self, **pass_args) -> bool:
+        """Run one pass, add its counts to the stats, and report whether it succeeded."""
+        errors_before = len(self.stats.errors)
+        prompts, events = self.run_single_pass(**pass_args)
+        self.stats.total_prompts_processed += prompts
+        self.stats.total_routing_events += events
+
+        # Clear GPU cache between passes to prevent OOM
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        return len(self.stats.errors) == errors_before
+
     def _validate_pipeline_completion(self) -> bool:
         """Validate that pipeline completed all required tasks."""
+        if self.stats.full_passes_completed < 2:
+            logger.error(f"Full passes completed: {self.stats.full_passes_completed}/2")
+            self.stats.validation_passed = False
+            return False
+
         if self.stats.runs_completed < self.num_runs:
             logger.error(f"Not all runs completed: {self.stats.runs_completed}/{self.num_runs}")
             self.stats.validation_passed = False
