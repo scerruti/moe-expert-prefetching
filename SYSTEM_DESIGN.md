@@ -67,7 +67,7 @@ $$P(e \mid x_{t}, l, \text{run}_1) \equiv P(e \mid x_{t}, l, \text{run}_n)$$
 
 **Token Cardinality:** Processing all tokens within ~8.4k examples (7,473 GSM8K + 964 MBPP) during prefill (not just prompt text); exact token count varies by vocabulary size and natural prompt lengths in each dataset.
 
-**Randomization Strategy:** Run the data collection 5 times with randomized prompt orderings to validate consistency. For validation, run a subset (e.g., 200 random prompts) against repeated randomized orderings to confirm deterministic routing.
+**Randomization Strategy** *(revised Nov 1, 2026, #109)*: collect the full datasets **once**. To validate consistency, take a stratified random subset of 200 prompts per dataset and run it in **5 randomized orderings**, confirming routing is deterministic. This is what Phase 2's determinism verification (#29) compares. Because the subset runs keep batching and shuffling, they also measure any effect of batch composition on routing (#105). Earlier drafts ran the full collection 5 times; that costs about 5× the GPU time and storage, and nothing downstream uses the extra full runs.
 
 ---
 
@@ -293,7 +293,7 @@ An empirical research investigation to establish a proof-of-concept for speculat
 
 ### Milestones
 
-1. **Complete Phase 1 telemetry collection** and confirm single-run deterministic outputs across 5 randomized runs on GSM8K and MBPP.
+1. **Complete Phase 1 telemetry collection** (one full pass over GSM8K and MBPP) and confirm deterministic routing across 5 randomized orderings of a 200-prompt subset per dataset.
 2. **Perform cross-domain divergence analysis** between math and code prompts; identify shared tokens and their routing consistency.
 3. **Train and benchmark the lookahead predictor** against collected routing traces; measure recall@$(k+m)$ and cache hit metrics.
 
