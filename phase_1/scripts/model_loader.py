@@ -136,6 +136,8 @@ class ModelLoader:
             )
             load_kwargs["quantization_config"] = quantization_config
         else:
+            # Without torch_dtype, transformers 4.45 loads in fp32 (~57 GB for
+            # Qwen1.5-MoE-A2.7B), which doesn't fit a 40 GB A100; fp16 is ~29 GB
             load_kwargs["torch_dtype"] = self.dtype
 
         self.model = AutoModelForCausalLM.from_pretrained(
