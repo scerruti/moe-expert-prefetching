@@ -39,30 +39,33 @@ def qwen_tokenizer():
     return ModelLoader("qwen1.5-moe-a2.7b", device="cpu").load_tokenizer()
 
 
-@pytest.fixture(scope="function")
-def qwen_model():
+@pytest.fixture(scope="session")
+def _qwen_model_session():
     """
-    Fixture to load Qwen1.5-MoE-A2.7B in fp16 (Phase 1 precision, #103) and
-    clean up after each test.
+    Load Qwen1.5-MoE-A2.7B in fp16 (Phase 1 precision, #103) once per test session.
 
-    Prevents GPU memory leak by properly freeing model between tests.
-    Yields model, tokenizer, and config for use in tests.
+    Loading once means a failing test can't leave a second copy behind and run
+    the GPU out of memory for every test after it.
+    """
+    model, tokenizer, config = ModelLoader("qwen1.5-moe-a2.7b").load()
+    logger.info(f"Loaded model on device: {model.device}")
+    yield model, tokenizer, config
+
+    logger.info("Cleaning up model from GPU memory...")
+    del model
+    torch.cuda.empty_cache()
+
+
+@pytest.fixture
+def qwen_model(_qwen_model_session):
+    """
+    The shared model, with any router hooks a test left behind removed afterwards.
 
     Usage:
         def test_something(qwen_model):
             model, tokenizer, config = qwen_model
-            # use model...
     """
-    loader = ModelLoader("qwen1.5-moe-a2.7b")
-    model, tokenizer, config = loader.load()
-
-    logger.info(f"Loaded model on device: {model.device}")
-
-    # Yield to test
-    yield model, tokenizer, config
-
-    # Cleanup after test
-    logger.info("Cleaning up model from GPU memory...")
-    del model
-    torch.cuda.empty_cache()
-    logger.info("Model cleanup complete")
+    yield _qwen_model_session
+    model = _qwen_model_session[0]
+    for layer in model.model.layers:
+        layer.mlp.gate._forward_hooks.clear()

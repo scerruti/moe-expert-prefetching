@@ -17,6 +17,8 @@ Usage:
         gate = loader.get_router_gate(layer)
 """
 
+import os
+
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from typing import Tuple, Optional, Dict, Any
@@ -123,6 +125,17 @@ class ModelLoader:
         Returns:
             (model, tokenizer, config)
         """
+        # Without a GPU this would download the full model (about 29 GB) and run
+        # for a very long time: in CI, until the job's timeout (#87). Fail fast
+        # instead; tests that need the model should use the qwen_model fixture,
+        # which marks them gpu so CI skips them.
+        if self.device != "cuda" and os.environ.get("MOE_ALLOW_CPU_MODEL_LOAD") != "1":
+            raise RuntimeError(
+                f"Refusing to load {self.model_id} without a CUDA GPU (device: {self.device}). "
+                "Tests that need the model should use the qwen_model fixture. "
+                "To load it on this machine anyway, set MOE_ALLOW_CPU_MODEL_LOAD=1."
+            )
+
         logger.info(f"Loading {self.model_id}...")
 
         self.load_tokenizer(trust_remote_code=trust_remote_code)
