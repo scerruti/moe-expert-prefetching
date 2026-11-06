@@ -288,6 +288,28 @@ class TestRouterHooks:
         for handle in handles:
             handle.remove()
 
+    def test_hook_error_stops_the_forward_pass(self, toy_model, caplog):
+        """A failing hook must stop the run, not let it finish with a layer missing (#97)."""
+
+        class FailingBuffer(RoutingDataBuffer):
+            def add(self, layer_idx, *args):
+                raise RuntimeError("buffer full")
+
+        handles = register_router_hooks(toy_model, FailingBuffer())
+        input_ids = torch.randint(0, toy_model.config.vocab_size, (2, 10))
+        try:
+            with pytest.raises(RuntimeError, match="buffer full"), torch.no_grad():
+                toy_model(input_ids)
+        finally:
+            for handle in handles:
+                handle.remove()
+        assert "Hook error at layer 0" in caplog.text
+
+    def test_hook_rejects_a_gate_that_does_not_return_logits(self):
+        hook = create_router_hook(0, RoutingDataBuffer())
+        with pytest.raises(TypeError, match="tensor of logits"):
+            hook(None, None, (torch.randn(4, 8), torch.randn(4, 8)))
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
