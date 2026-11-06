@@ -202,8 +202,17 @@ class ForwardPassCapture:
         rows where attention_mask is 1 (#99).
         """
         batch_size, padded_len = attention_mask.shape
-        events = {event["layer_idx"]: event for event in self.routing_buffer.get_all()}
+        captured = self.routing_buffer.get_all()
+        events = {event["layer_idx"]: event for event in captured}
         layers = sorted(events)
+        # Every layer must report exactly once. A hook that never fired would
+        # otherwise leave its layer silently missing from the dataset (#97).
+        expected = list(range(self.model.config.num_hidden_layers))
+        if layers != expected or len(captured) != len(expected):
+            raise RuntimeError(
+                f"Routing captured for layers {layers} ({len(captured)} events); expected "
+                f"one event for each of layers 0-{len(expected) - 1}. Not writing an incomplete batch."
+            )
 
         rows, prompt_index, token_position = [], [], []
         for b in range(batch_size):
