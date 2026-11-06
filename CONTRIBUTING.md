@@ -64,6 +64,7 @@ pytest phase_1/scripts/test_forward_pass.py -v
 
 ## Continuous Integration
 
-- **CPU tests run automatically** on every pull request and on pushes to `main` and `integration/phase-1-validation` (`.github/workflows/cpu-tests.yml`), with `pytest -m "not gpu"`.
-- **GPU tests** carry the `gpu` marker (any test using the `qwen_model` fixture gets it automatically). They run on Colab with `pytest -m gpu` at the PR's final commit (#113).
+- **CPU tests run automatically** on every pull request and on pushes to `main` and `integration/phase-1-validation` (`.github/workflows/cpu-tests.yml`), with `pytest -m "not gpu"` over the whole repository.
+- **GPU tests** carry the `gpu` marker (any test using the `qwen_model` fixture gets it automatically). Load the model only through that fixture: without a GPU, `ModelLoader.load()` refuses to start, so a test that loads it directly fails in CI. They run on Colab with `pytest -m gpu` at the PR's final commit (#113).
+- **If the CPU check fails for a reason that isn't your code,** check whether the Hugging Face Hub is down: the tests download datasets and the tokenizer from it. Say so on the PR. Re-run the check once the Hub is back, or ask an admin to merge past it, noting why on the PR.
 - **Every PR fills in the acceptance-criteria table** in the PR template: each criterion, the test that proves it, and where it ran.

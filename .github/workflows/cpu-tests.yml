@@ -50,4 +50,5 @@ jobs:
           restore-keys: hf-${{ runner.os }}-
 
       - name: Run CPU tests
-        run: python -m pytest phase_1/scripts -m "not gpu" -v --tb=short
+        # The whole repo, so new test folders (Phase 2 onwards) are covered too
+        run: python -m pytest -m "not gpu" -v --tb=short
