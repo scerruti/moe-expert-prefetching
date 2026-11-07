@@ -305,6 +305,14 @@ class TestRouterHooks:
                 handle.remove()
         assert "Hook error at layer 0" in caplog.text
 
+    @pytest.mark.parametrize("top_k", [2, 8])
+    def test_model_that_does_not_route_top_4_is_refused(self, toy_model, top_k):
+        """Phase 1 is locked to Qwen's top-4 (#100): another k must fail before any hook is registered."""
+        toy_model.config.num_experts_per_tok = top_k
+        with pytest.raises(ValueError, match=f"routes top-{top_k}"):
+            register_router_hooks(toy_model, RoutingDataBuffer())
+        assert all(not layer.mlp.gate._forward_hooks for layer in toy_model.model.layers)
+
     def test_hook_rejects_a_gate_that_does_not_return_logits(self):
         hook = create_router_hook(0, RoutingDataBuffer())
         with pytest.raises(TypeError, match="tensor of logits"):
