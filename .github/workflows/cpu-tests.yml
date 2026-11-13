@@ -1,0 +1,54 @@
+# CPU tests on every pull request (any base branch, so stacked PRs are covered)
+# and on pushes to main and the testing branch (#113).
+#
+# Tests that need a CUDA GPU and the real model carry the `gpu` marker and are
+# excluded here; they run on Colab and report a separate status.
+name: CPU tests
+
+on:
+  pull_request:
+  push:
+    branches: [main, integration/phase-1-validation]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cpu-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cpu-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install CPU-only torch at the pinned versions
+        # The default PyPI build of torch bundles CUDA libraries (several GB) that
+        # a CPU runner can't use; the pins themselves come from requirements.txt.
+        run: |
+          python -m pip install --upgrade pip
+          pip install $(grep -E '^(torch|torchvision)==' requirements.txt) \
+            --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install the rest of requirements.txt
+        run: pip install -r requirements.txt
+
+      - name: Cache Hugging Face downloads (datasets, tokenizer, configs)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: hf-${{ runner.os }}-
+
+      - name: Run CPU tests
+        # The whole repo, so new test folders (Phase 2 onwards) are covered too
+        run: python -m pytest -m "not gpu" -v --tb=short

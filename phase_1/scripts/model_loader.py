@@ -17,6 +17,8 @@ Usage:
         gate = loader.get_router_gate(layer)
 """
 
+import os
+
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from typing import Tuple, Optional, Dict, Any
@@ -107,6 +109,15 @@ class ModelLoader:
         logger.warning("No GPU detected, using CPU (slow)")
         return "cpu"
 
+    def load_tokenizer(self, trust_remote_code: bool = True) -> Any:
+        """Load only the tokenizer (a few MB), padding on the left like load() does."""
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            self.model_id,
+            trust_remote_code=trust_remote_code,
+            padding_side="left",
+        )
+        return self.tokenizer
+
     def load(self, trust_remote_code: bool = True) -> Tuple[Any, Any, Dict[str, Any]]:
         """
         Load model and tokenizer.
@@ -114,13 +125,20 @@ class ModelLoader:
         Returns:
             (model, tokenizer, config)
         """
+        # Without a GPU this would download the full model (about 29 GB) and run
+        # for a very long time: in CI, until the job's timeout (#87). Fail fast
+        # instead; tests that need the model should use the qwen_model fixture,
+        # which marks them gpu so CI skips them.
+        if self.device != "cuda" and os.environ.get("MOE_ALLOW_CPU_MODEL_LOAD") != "1":
+            raise RuntimeError(
+                f"Refusing to load {self.model_id} without a CUDA GPU (device: {self.device}). "
+                "Tests that need the model should use the qwen_model fixture. "
+                "To load it on this machine anyway, set MOE_ALLOW_CPU_MODEL_LOAD=1."
+            )
+
         logger.info(f"Loading {self.model_id}...")
 
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            self.model_id,
-            trust_remote_code=trust_remote_code,
-            padding_side="left",
-        )
+        self.load_tokenizer(trust_remote_code=trust_remote_code)
 
         load_kwargs = {
             "trust_remote_code": trust_remote_code,
