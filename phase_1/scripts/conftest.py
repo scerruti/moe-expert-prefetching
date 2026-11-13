@@ -15,6 +15,7 @@ import torch
 import logging
 
 from model_loader import ModelLoader
+from shared_model import reset_after_test
 
 logger = logging.getLogger(__name__)
 
@@ -59,13 +60,12 @@ def _qwen_model_session():
 @pytest.fixture
 def qwen_model(_qwen_model_session):
     """
-    The shared model, with any router hooks a test left behind removed afterwards.
+    The shared model. After each test, every hook it left on any module is
+    removed, and the test fails if it left the model in training mode (#118).
 
     Usage:
         def test_something(qwen_model):
             model, tokenizer, config = qwen_model
     """
     yield _qwen_model_session
-    model = _qwen_model_session[0]
-    for layer in model.model.layers:
-        layer.mlp.gate._forward_hooks.clear()
+    reset_after_test(_qwen_model_session[0])
