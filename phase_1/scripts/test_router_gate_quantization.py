@@ -10,7 +10,10 @@ so routing comes from the model as released.
 import pytest
 import torch
 
-requires_gpu = pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU")
+
+def requires_gpu(test):
+    """Excluded from CI (`-m "not gpu"`) and skipped without CUDA."""
+    return pytest.mark.gpu(pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU")(test))
 
 
 @requires_gpu
