@@ -1,21 +1,22 @@
 # Phase 2 Status Report
 
-**Date:** 2026-10-02  
-**Project:** Speculative Expert Prefetching in Mixture-of-Experts Models  
-**Phase:** 2 of 5 (Statistical Verification & Domain Cross-Comparison)  
+**Date:** 2026-10-02\
+**Project:** Speculative Expert Prefetching in Mixture-of-Experts Models\
+**Phase:** 2 of 5 (Statistical Verification & Domain Cross-Comparison)\
 **Model:** Qwen1.5-MoE-A2.7B (MVP), DeepSeek-V2-Lite (optional research extension)
 
----
+______________________________________________________________________
 
 ## Summary
 
 Phase 2 is **fully planned** and **ready for implementation**. All issues have been created on GitHub. Development can begin immediately.
 
----
+______________________________________________________________________
 
 ## What's Done (Planning Phase)
 
 ### ✅ Planning & Specification
+
 - [x] Complete Phase 2 technical specification (ARCHITECTURE.md)
 - [x] Component breakdown into 11 GitHub issues (#40-#50)
 - [x] Dependency mapping and critical path analysis
@@ -24,6 +25,7 @@ Phase 2 is **fully planned** and **ready for implementation**. All issues have b
 - [x] Estimated duration per component (total 4 weeks)
 
 ### ✅ Key Decisions Locked In
+
 - **MVP Model:** Qwen1.5-MoE-A2.7B (from Phase 1 telemetry)
 - **Research Extension:** DeepSeek-V2-Lite (optional, if Phase 1 data available)
 - **Datasets:** GSM8K + MBPP (from Phase 1 Parquet files)
@@ -32,12 +34,14 @@ Phase 2 is **fully planned** and **ready for implementation**. All issues have b
 - **Critical Path:** #40 → #41-42-44 (parallel) → #43-45-46-47 (parallel) → #48 → #49 → #50
 
 ### ✅ Documentation
+
 - [x] GITHUB_ISSUES.md (issue dependency map & tracking)
 - [x] ARCHITECTURE.md (analytical pipeline & technical details)
 - [x] CHECKLIST.md (granular task breakdown for all components)
 - [x] STATUS.md (this file - status tracking)
 
 ### ✅ GitHub Issues Created
+
 - [x] #40: Data Loading & Preparation
 - [x] #41: Determinism Verification
 - [x] #42: Baseline Distributions Analysis
@@ -52,12 +56,13 @@ Phase 2 is **fully planned** and **ready for implementation**. All issues have b
 
 All issues assigned to @me with proper labels and blocking relationships.
 
----
+______________________________________________________________________
 
 ## What's Missing (Implementation Phase)
 
 ### ❌ Code
-```
+
+```text
 phase_2/scripts/
 ├── data_loader.py                   [NOT STARTED]
 ├── determinism.py                   [NOT STARTED]
@@ -75,7 +80,8 @@ requirements.txt (Phase 2 updates)   [NOT STARTED]
 ```
 
 ### ❌ Data Outputs
-```
+
+```text
 phase_2/data/
 ├── data_quality_report.md           [NOT GENERATED]
 ├── summary_statistics.csv           [NOT GENERATED]
@@ -105,25 +111,26 @@ phase_2/reports/
 └── README.md                        [NOT GENERATED]
 ```
 
----
+______________________________________________________________________
 
 ## Implementation Roadmap
 
-| Week | Milestone | Status | Issues |
-|------|-----------|--------|--------|
-| 1 (Oct 7-13) | Data loading, determinism check, baseline analysis | 🔲 TODO | #40, #41, #42, #44 |
-| 2 (Oct 14-20) | Statistical analysis (token, JSD, expert, layer) | 🔲 TODO | #43, #45, #46, #47 |
-| 3 (Oct 21-27) | Specialization profiling, visualizations | 🔲 TODO | #48, #49 |
-| 4 (Oct 28-Nov 4) | Report generation, documentation, review | 🔲 TODO | #50 |
+| Week             | Milestone                                          | Status  | Issues             |
+| ---------------- | -------------------------------------------------- | ------- | ------------------ |
+| 1 (Oct 7-13)     | Data loading, determinism check, baseline analysis | 🔲 TODO | #40, #41, #42, #44 |
+| 2 (Oct 14-20)    | Statistical analysis (token, JSD, expert, layer)   | 🔲 TODO | #43, #45, #46, #47 |
+| 3 (Oct 21-27)    | Specialization profiling, visualizations           | 🔲 TODO | #48, #49           |
+| 4 (Oct 28-Nov 4) | Report generation, documentation, review           | 🔲 TODO | #50                |
 
 **Target Completion:** 2026-11-04 (4 weeks from start 2026-10-07)
 
----
+______________________________________________________________________
 
 ## Dependencies
 
 ### Python Packages (to be added to requirements.txt)
-```
+
+```text
 # Analysis & Statistics
 scipy>=1.8.0          # KL divergence, JS divergence, statistical tests
 polars>=0.19.0        # Fast Parquet I/O and querying
@@ -144,6 +151,7 @@ black>=23.0.0         # Code formatting (optional)
 ```
 
 ### Upstream Dependency: Phase 1 Completion
+
 - **Critical Blocker:** Phase 1 must complete and produce Parquet files
   - `gsm8k_routing_traces.parquet` (GSM8K + 32 layers × 64 experts)
   - `mbpp_routing_traces.parquet` (MBPP + 32 layers × 64 experts)
@@ -152,24 +160,27 @@ black>=23.0.0         # Code formatting (optional)
 - **Risk:** If Phase 1 delayed beyond 2026-10-03, Phase 2 kickoff pushed to following week
 
 ### Hardware Requirements
+
 - **CPU:** Standard multi-core desktop (8+ cores preferred for parallelism)
 - **RAM:** 16GB minimum (all analyses fit in memory)
 - **Storage:** 50GB local SSD for Phase 1 Parquet + Phase 2 analysis outputs
 - **GPU:** Not required for Phase 2 (all CPU-based analysis)
 
----
+______________________________________________________________________
 
 ## Success Criteria for Phase 2
 
 All of the following must be true:
 
 ### Data Quality & Validation
+
 - [ ] Phase 1 Parquet files load without corruption (Schema validation passes)
 - [ ] Data quality score: >98% valid values (no NaN/inf in routing traces)
-- [ ] Determinism check passes: <10^-6 max deviation for sample subset
+- [ ] Determinism check passes: \<10^-6 max deviation for sample subset
 - [ ] All 11 issues complete with acceptance criteria met
 
 ### Analysis Completeness
+
 - [ ] Domain baseline distributions computed for all layers and experts
 - [ ] Determinism verified across 5 Phase 1 runs
 - [ ] Shared token analysis covers >90% of vocabulary overlap
@@ -178,6 +189,7 @@ All of the following must be true:
 - [ ] Specialization index calculated for all layers with classification
 
 ### Visualization & Reporting
+
 - [ ] 12+ publication-ready charts created (PNG, SVG)
 - [ ] Interactive HTML dashboard functional (all tabs, drill-down working)
 - [ ] Comprehensive Phase 2 report (10-15 pages, includes all findings)
@@ -186,6 +198,7 @@ All of the following must be true:
 - [ ] PDF export generated successfully
 
 ### Code Quality & Documentation
+
 - [ ] All scripts well-documented (docstrings, comments)
 - [ ] Unit tests written for statistical functions (scipy calls verified)
 - [ ] Code is reproducible (seeds set for clustering, bootstrap)
@@ -193,12 +206,14 @@ All of the following must be true:
 - [ ] No hard-coded paths (use config files or relative paths)
 
 ### Insights & Recommendations
+
 - [ ] 5+ key findings documented (e.g., "mid-layers are highly specialized")
 - [ ] Actionable recommendations for Phase 3 provided
 - [ ] Layers prioritized for Phase 3 predictor training
 - [ ] Confidence levels documented for all findings
 
 ### Deliverables Committed
+
 - [ ] `phase_2/docs/GITHUB_ISSUES.md` ✅ (created)
 - [ ] `phase_2/docs/ARCHITECTURE.md` ✅ (created)
 - [ ] `phase_2/docs/CHECKLIST.md` ✅ (created)
@@ -209,56 +224,62 @@ All of the following must be true:
 - [ ] `phase_2/README.md` (directory overview)
 - [ ] Git feature branch: `feature/phase-2-planning` committed and merged
 
----
+______________________________________________________________________
 
 ## Known Unknowns & Risk Assessment
 
-| Risk | Probability | Impact | Mitigation |
-|------|-------------|--------|-----------|
-| Phase 1 Parquet data incomplete/corrupted | MEDIUM | CRITICAL | Start data validation immediately upon Phase 1 completion |
-| DeepSeek Phase 1 data unavailable | MEDIUM | MEDIUM | Plan for Qwen-only analysis; add DeepSeek comparison as extension |
-| Statistical tests fail due to edge cases | LOW | MEDIUM | Use robust implementations (scipy) and handle NaN/inf gracefully |
-| Visualization library conflicts (matplotlib/plotly) | LOW | LOW | Test co-existence early (Week 1) |
-| Specialization interpretation ambiguous | MEDIUM | LOW | Document all assumptions and get feedback during Week 2 |
-| Memory constraints on full analysis | LOW | MEDIUM | Use Polars streaming or DuckDB to avoid loading full dataset |
-| Report generation takes longer than estimated | MEDIUM | LOW | Start report writing in parallel (Week 3), not just after #49 |
+| Risk                                                | Probability | Impact   | Mitigation                                                        |
+| --------------------------------------------------- | ----------- | -------- | ----------------------------------------------------------------- |
+| Phase 1 Parquet data incomplete/corrupted           | MEDIUM      | CRITICAL | Start data validation immediately upon Phase 1 completion         |
+| DeepSeek Phase 1 data unavailable                   | MEDIUM      | MEDIUM   | Plan for Qwen-only analysis; add DeepSeek comparison as extension |
+| Statistical tests fail due to edge cases            | LOW         | MEDIUM   | Use robust implementations (scipy) and handle NaN/inf gracefully  |
+| Visualization library conflicts (matplotlib/plotly) | LOW         | LOW      | Test co-existence early (Week 1)                                  |
+| Specialization interpretation ambiguous             | MEDIUM      | LOW      | Document all assumptions and get feedback during Week 2           |
+| Memory constraints on full analysis                 | LOW         | MEDIUM   | Use Polars streaming or DuckDB to avoid loading full dataset      |
+| Report generation takes longer than estimated       | MEDIUM      | LOW      | Start report writing in parallel (Week 3), not just after #49     |
 
----
+______________________________________________________________________
 
 ## Communication & Oversight
 
 ### Weekly Check-ins
+
 - **Day 1 (Monday 9am):** Standup on week's progress and blockers
 - **Day 4 (Thursday):** Midweek sync on major findings
 - **Day 5 (Friday):** End-of-week review and next week planning
 
 ### Issue Status Updates
+
 - Update GitHub issue status at end of each day
 - Comment with blockers/progress
 - Link PRs to issues immediately upon creation
 
 ### Key Milestones for Review
+
 - **End of Week 1:** Data loading complete, determinism verified ✅
 - **End of Week 2:** All statistical analyses complete ✅
 - **End of Week 3:** Visualizations and draft report done ✅
 - **End of Week 4:** Final report complete and reviewed ✅
 
----
+______________________________________________________________________
 
 ## Resources & Budget
 
 ### Personnel
+
 - **Implementation:** 1 lead analyst (4 weeks full-time)
 - **Review:** Project lead (2-3 hours/week check-ins)
 - **Support:** DevOps (if needed for large dataset handling)
 
 ### Infrastructure
+
 - **Compute:** Standard desktop/laptop with 16GB RAM (sufficient)
 - **Storage:** 50GB local SSD (Parquet + analysis outputs)
 - **Version control:** GitHub (already set up)
 - **Collaboration:** Slack, email, GitHub issues
 
 ### Timeline & Dates
+
 - **Start:** 2026-10-07 (pending Phase 1 completion 2026-10-03)
 - **Week 1 Target:** 2026-10-13
 - **Week 2 Target:** 2026-10-20
@@ -266,83 +287,95 @@ All of the following must be true:
 - **Completion:** 2026-11-04
 - **Buffer:** 1 week (if needed for debugging/refinement)
 
----
+______________________________________________________________________
 
 ## Next Steps (Upon Phase 1 Completion)
 
 ### Immediate (First Day of Phase 2)
+
 1. [ ] Verify Phase 1 Parquet files exist and are readable
-2. [ ] Run data quality checks (#40 initial)
-3. [ ] Confirm model metadata (layer count, expert count)
-4. [ ] Set up development environment (install dependencies)
+1. [ ] Run data quality checks (#40 initial)
+1. [ ] Confirm model metadata (layer count, expert count)
+1. [ ] Set up development environment (install dependencies)
 
 ### First Week
+
 5. [ ] Complete #40 (Data Loading)
-6. [ ] Start #41, #42, #44 in parallel
-7. [ ] Daily progress updates to GitHub issues
+1. [ ] Start #41, #42, #44 in parallel
+1. [ ] Daily progress updates to GitHub issues
 
 ### Ongoing
+
 8. [ ] Link all commits to GitHub issues
-9. [ ] Create PRs early (even if not complete)
-10. [ ] Request code review at end of each day/component
+1. [ ] Create PRs early (even if not complete)
+1. [ ] Request code review at end of each day/component
 
 ### Sign-Off (Final Review)
-11. [ ] Phase 2 review meeting with team
-12. [ ] All findings validated and reviewed
-13. [ ] Report approved and finalized
-14. [ ] Phase 3 kickoff with recommendations
 
----
+11. [ ] Phase 2 review meeting with team
+01. [ ] All findings validated and reviewed
+01. [ ] Report approved and finalized
+01. [ ] Phase 3 kickoff with recommendations
+
+______________________________________________________________________
 
 ## Documentation Artifacts (Now Available)
 
 1. **GITHUB_ISSUES.md** – Issue dependency map and work tracking (read for details on each issue)
-2. **ARCHITECTURE.md** – Technical specifications of analytical pipeline (read for methods)
-3. **CHECKLIST.md** – Granular task list for all 11 components (use during implementation)
-4. **STATUS.md** – Status tracking (this file, updated weekly)
+1. **ARCHITECTURE.md** – Technical specifications of analytical pipeline (read for methods)
+1. **CHECKLIST.md** – Granular task list for all 11 components (use during implementation)
+1. **STATUS.md** – Status tracking (this file, updated weekly)
 
 **Recommended Reading Order:**
-1. GITHUB_ISSUES.md (overview of all work)
-2. ARCHITECTURE.md (understand the analysis pipeline)
-3. CHECKLIST.md (granular tasks for picked issue)
 
----
+1. GITHUB_ISSUES.md (overview of all work)
+1. ARCHITECTURE.md (understand the analysis pipeline)
+1. CHECKLIST.md (granular tasks for picked issue)
+
+______________________________________________________________________
 
 ## FAQ
 
 ### Q: Can I start before Phase 1 is done?
+
 **A:** No. Phase 2 depends on Phase 1 Parquet files. Wait for Phase 1 completion (target 2026-10-03). You can prepare environment/dependencies in the meantime.
 
 ### Q: What if Phase 1 takes longer?
+
 **A:** Phase 2 start date shifts accordingly. Still aim to complete Phase 2 within 4 weeks of Phase 1 finish.
 
 ### Q: Should I focus on Qwen only or include DeepSeek?
+
 **A:** Focus on Qwen MVP first (all 11 issues). DeepSeek is optional extension if Phase 1 data becomes available. Flag as "nice-to-have" for Week 4.
 
 ### Q: What if a statistical test is ambiguous?
+
 **A:** Document the ambiguity and get feedback during Week 2 check-in. Don't block; move forward with best interpretation.
 
 ### Q: How do I handle edge cases (e.g., all experts equally activated)?
+
 **A:** See CHECKLIST.md for each issue's edge case handling. Use robust scipy/numpy implementations that handle edge cases gracefully.
 
 ### Q: Can analyses be parallelized across multiple developers?
+
 **A:** Yes! Week 1 work is highly parallel (#40 feeds into #41-44). Week 2 can also parallelize (#43, #45, #46, #47). Coordinate on shared data format and file naming.
 
 ### Q: What if a visualization takes longer than estimated?
+
 **A:** Start #49 (visualizations) earlier if analyses are done. Split visualization tasks: one person handles distribution plots, another handles heatmaps, etc.
 
----
+______________________________________________________________________
 
 ## Approval & Sign-Off
 
-| Role | Name | Date | Status |
-|------|------|------|--------|
-| Planning Lead | Claude Haiku 4.5 | 2026-10-02 | ✅ Complete |
-| Project Lead | [TBD] | — | ⬜ Pending Review |
-| Implementation Lead | @me | — | ⬜ Ready to Start |
-| Data/ML Lead | [TBD] | — | ⬜ OK to Proceed |
+| Role                | Name             | Date       | Status            |
+| ------------------- | ---------------- | ---------- | ----------------- |
+| Planning Lead       | Claude Haiku 4.5 | 2026-10-02 | ✅ Complete       |
+| Project Lead        | [TBD]            | —          | ⬜ Pending Review |
+| Implementation Lead | @me              | —          | ⬜ Ready to Start |
+| Data/ML Lead        | [TBD]            | —          | ⬜ OK to Proceed  |
 
----
+______________________________________________________________________
 
 ## Contact & Support
 
@@ -352,9 +385,8 @@ All of the following must be true:
 - **Questions:** Comment on GitHub issues or email team
 - **Blockers:** Escalate to project lead immediately
 
----
+______________________________________________________________________
 
 **Status:** 🟢 **READY FOR IMPLEMENTATION**
 
 All planning complete. 11 GitHub issues created (#40-#50). Development can begin upon Phase 1 completion.
-

@@ -1,53 +1,64 @@
+import queue
+
 import torch
 import torch.nn.functional as F
-import queue
 
 # Phase 1 is locked to Qwen1.5-MoE-A2.7B (PHASE_1_MODEL_DECISION.md): router
 # gate at layer.mlp.gate, 60 experts, top-4 routing. register_router_hooks
 # checks the loaded model against this so a model change fails loudly.
 QWEN_TOP_K = 4
 
+
 class RoutingDataBuffer:
     """
     Thread-safe buffer to store hook outputs without blocking forward execution.
     """
+
     def __init__(self):
         self.buffer = queue.Queue()
-        
+
     def add(self, layer_idx, logits, probabilities, topk_indices):
-        # Detach and move to CPU immediately to prevent GPU memory leaks 
+        # Detach and move to CPU immediately to prevent GPU memory leaks
         # and ensure the main forward pass isn't blocked by subsequent processing.
-        self.buffer.put({
-            'layer_idx': layer_idx,
-            'logits': logits.detach().cpu(),
-            'probabilities': probabilities.detach().cpu(),
-            'topk_indices': topk_indices.detach().cpu()
-        })
-        
+        self.buffer.put(
+            {
+                "layer_idx": layer_idx,
+                "logits": logits.detach().cpu(),
+                "probabilities": probabilities.detach().cpu(),
+                "topk_indices": topk_indices.detach().cpu(),
+            }
+        )
+
     def get_all(self):
         results = []
         while not self.buffer.empty():
             results.append(self.buffer.get())
         return results
 
+
 def create_router_hook(layer_idx, data_buffer):
     """
     Creates a forward hook to capture routing data for a specific MoE layer.
 
-    Qwen1.5-MoE-A2.7B's router gate (layer.mlp.gate) is an nn.Linear, so its
-    output is the router logits for every token in the flattened batch.
+    Qwen's native router returns (logits, selected scores, selected indices).
+    Older linear gates return logits directly. Both use flattened token rows.
 
     Errors are logged with the layer number, then re-raised. That stops the
     forward pass, so a collection run fails instead of writing data with a
     layer missing (#97).
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     def hook(module, input, output):
         try:
+            if isinstance(output, tuple) and len(output) == 3:
+                output = output[0]
             if not isinstance(output, torch.Tensor):
-                raise TypeError(f"Expected the router gate to return a tensor of logits, got {type(output).__name__}")
+                raise TypeError(
+                    f"Expected the router gate to return a tensor of logits, got {type(output).__name__}"
+                )
 
             # Match Qwen2MoE's own routing: softmax in float32, then top-k
             probabilities = F.softmax(output, dim=-1, dtype=torch.float)
@@ -59,6 +70,7 @@ def create_router_hook(layer_idx, data_buffer):
 
     return hook
 
+
 def register_router_hooks(model, data_buffer):
     """
     Registers forward hooks on all MoE router layers in Qwen1.5-MoE-A2.7B.
@@ -69,6 +81,7 @@ def register_router_hooks(model, data_buffer):
     For other models, update the gate path (e.g., Mixtral: layer.block_sparse_moe.gate).
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     top_k = model.config.num_experts_per_tok
@@ -92,6 +105,8 @@ def register_router_hooks(model, data_buffer):
         registered_count += 1
         hook_handles.append(handle)
 
-    logger.info(f"✅ Registered {registered_count} router hooks on {len(model.model.layers)} layers")
-    logger.info(f"📊 Now running forward pass - watch for 🎣 hook fire messages")
+    logger.info(
+        f"✅ Registered {registered_count} router hooks on {len(model.model.layers)} layers"
+    )
+    logger.info("📊 Now running forward pass - watch for 🎣 hook fire messages")
     return hook_handles

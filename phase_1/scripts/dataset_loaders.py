@@ -15,13 +15,18 @@ Usage:
     test_data = gsm_loader.load(split="test")
 """
 
-from datasets import load_dataset
-from typing import List, Dict, Any, Optional
-import logging
-import sys
 import json
+import logging
+from typing import Any, Dict, List, Optional
+
+from datasets import load_dataset
 
 logger = logging.getLogger(__name__)
+
+DATASET_REVISIONS = {
+    "openai/gsm8k": "740312add88f781978c0658806c59bc2815b9866",
+    "google-research-datasets/mbpp": "4bb6404fdc6cacfda99d4ac4205087b89d32030c",
+}
 
 
 class MBPPLoader:
@@ -30,10 +35,13 @@ class MBPPLoader:
     def __init__(self):
         """Initialize MBPP loader."""
         self.dataset_name = "google-research-datasets/mbpp"
+        self.revision = DATASET_REVISIONS[self.dataset_name]
         self.data = None
         logger.info("Initialized MBPP loader")
 
-    def load(self, split: str = "train", num_examples: Optional[int] = None) -> List[Dict[str, Any]]:
+    def load(
+        self, split: str = "train", num_examples: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
         """
         Load MBPP dataset.
 
@@ -46,20 +54,22 @@ class MBPPLoader:
         """
         logger.info(f"Loading MBPP {split} split...")
 
-        dataset = load_dataset(self.dataset_name, split=split)
+        dataset = load_dataset(self.dataset_name, split=split, revision=self.revision)
 
         if num_examples is not None:
             dataset = dataset.select(range(min(num_examples, len(dataset))))
 
         examples = []
         for example in dataset:
-            examples.append({
-                "task_id": example.get("task_id"),
-                "prompt": example.get("text", ""),
-                "reference_code": example.get("code", ""),
-                "test_cases": example.get("test_list", []),
-                "source": "mbpp",
-            })
+            examples.append(
+                {
+                    "task_id": example.get("task_id"),
+                    "prompt": example.get("text", ""),
+                    "reference_code": example.get("code", ""),
+                    "test_cases": example.get("test_list", []),
+                    "source": "mbpp",
+                }
+            )
 
         logger.info(f"Loaded {len(examples)} examples from MBPP {split}")
         return examples
@@ -68,7 +78,7 @@ class MBPPLoader:
         """Get sizes of each split."""
         splits = {}
         for split in ["train", "validation", "test"]:
-            dataset = load_dataset(self.dataset_name, split=split)
+            dataset = load_dataset(self.dataset_name, split=split, revision=self.revision)
             splits[split] = len(dataset)
         return splits
 
@@ -107,7 +117,9 @@ class MBPPLoader:
         }
 
     @staticmethod
-    def estimate_memory(token_counts: Dict[str, Any], model_hidden_size: int = 4096) -> Dict[str, float]:
+    def estimate_memory(
+        token_counts: Dict[str, Any], model_hidden_size: int = 4096
+    ) -> Dict[str, float]:
         """
         Estimate memory footprint for storing tokens.
 
@@ -122,7 +134,9 @@ class MBPPLoader:
 
         # Rough memory estimates per token
         embeddings_gb = (total_tokens * model_hidden_size * 4) / (1024**3)  # float32
-        activations_gb = (total_tokens * model_hidden_size * 2) / (1024**3)  # float16 for activations
+        activations_gb = (total_tokens * model_hidden_size * 2) / (
+            1024**3
+        )  # float16 for activations
 
         return {
             "embeddings_gb": embeddings_gb,
@@ -137,11 +151,17 @@ class GSM8KLoader:
     def __init__(self):
         """Initialize GSM8K loader."""
         self.dataset_name = "openai/gsm8k"
+        self.revision = DATASET_REVISIONS[self.dataset_name]
         self.data = None
         logger.info("Initialized GSM8K loader")
 
-    def load(self, split: str = "train", num_examples: Optional[int] = None, group_id: Optional[int] = None,
-             group_file: Optional[str] = None) -> List[Dict[str, Any]]:
+    def load(
+        self,
+        split: str = "train",
+        num_examples: Optional[int] = None,
+        group_id: Optional[int] = None,
+        group_file: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Load GSM8K dataset.
 
@@ -157,7 +177,7 @@ class GSM8KLoader:
         logger.info(f"Loading GSM8K {split} split...")
 
         # GSM8K needs 'main' configuration
-        dataset = load_dataset(self.dataset_name, "main", split=split)
+        dataset = load_dataset(self.dataset_name, "main", split=split, revision=self.revision)
 
         if num_examples is not None:
             dataset = dataset.select(range(min(num_examples, len(dataset))))
@@ -178,13 +198,15 @@ class GSM8KLoader:
             answer_text = example.get("answer", "")
             reasoning = self._extract_reasoning(answer_text)
 
-            examples.append({
-                "example_id": idx,
-                "question": example.get("question", ""),
-                "reference_answer": answer_text,
-                "reasoning_steps": reasoning,
-                "source": "gsm8k",
-            })
+            examples.append(
+                {
+                    "example_id": idx,
+                    "question": example.get("question", ""),
+                    "reference_answer": answer_text,
+                    "reasoning_steps": reasoning,
+                    "source": "gsm8k",
+                }
+            )
 
         logger.info(f"Loaded {len(examples)} examples from GSM8K {split}")
         return examples
@@ -192,14 +214,14 @@ class GSM8KLoader:
     @staticmethod
     def _load_group_indices(group_file: str, group_id: int) -> set:
         """Load sample indices for a specific group from group assignment file."""
-        with open(group_file, 'r') as f:
+        with open(group_file, "r") as f:
             data = json.load(f)
 
         group_key = str(group_id)
-        if group_key not in data.get('groups', {}):
+        if group_key not in data.get("groups", {}):
             raise ValueError(f"Group {group_id} not found in {group_file}")
 
-        indices = data['groups'][group_key]['sample_indices']
+        indices = data["groups"][group_key]["sample_indices"]
         return set(indices)
 
     @staticmethod
@@ -217,7 +239,9 @@ class GSM8KLoader:
         splits = {}
         for split in ["train", "test"]:
             try:
-                dataset = load_dataset(self.dataset_name, "main", split=split)
+                dataset = load_dataset(
+                    self.dataset_name, "main", split=split, revision=self.revision
+                )
                 splits[split] = len(dataset)
             except Exception as e:
                 logger.warning(f"Could not load {split}: {e}")
@@ -243,14 +267,18 @@ class GSM8KLoader:
             "total_question_tokens": sum(question_tokens),
             "total_answer_tokens": sum(answer_tokens),
             "total_tokens": total_tokens,
-            "avg_question_tokens": sum(question_tokens) / len(question_tokens) if question_tokens else 0,
+            "avg_question_tokens": sum(question_tokens) / len(question_tokens)
+            if question_tokens
+            else 0,
             "avg_answer_tokens": sum(answer_tokens) / len(answer_tokens) if answer_tokens else 0,
             "max_question_tokens": max(question_tokens) if question_tokens else 0,
             "max_answer_tokens": max(answer_tokens) if answer_tokens else 0,
         }
 
     @staticmethod
-    def estimate_memory(token_counts: Dict[str, Any], model_hidden_size: int = 4096) -> Dict[str, float]:
+    def estimate_memory(
+        token_counts: Dict[str, Any], model_hidden_size: int = 4096
+    ) -> Dict[str, float]:
         """Estimate memory footprint for storing tokens."""
         total_tokens = token_counts["total_tokens"]
         embeddings_gb = (total_tokens * model_hidden_size * 4) / (1024**3)
@@ -273,9 +301,9 @@ def test_loaders():
         print("❌ transformers required for token counting. Install with: pip install transformers")
         return
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("MBPP Loader - Acceptance Criteria Test")
-    print("="*60)
+    print("=" * 60)
 
     mbpp = MBPPLoader()
 
@@ -286,7 +314,9 @@ def test_loaders():
     val_examples = mbpp.load(split="validation")
 
     total_examples = len(train_examples) + len(test_examples_all) + len(val_examples)
-    print(f"✅ Loaded {total_examples} examples (train: {len(train_examples)}, test: {len(test_examples_all)}, val: {len(val_examples)})")
+    print(
+        f"✅ Loaded {total_examples} examples (train: {len(train_examples)}, test: {len(test_examples_all)}, val: {len(val_examples)})"
+    )
     # Actual MBPP has 964 examples (374 train + 500 test + 90 validation)
     assert total_examples >= 960, f"Expected ~974 examples total, got {total_examples}"
 
@@ -298,14 +328,17 @@ def test_loaders():
     # Count tokens
     print("\n3. Counting tokens...")
     try:
-        tokenizer = AutoTokenizer.from_pretrained("mistralai/Mixtral-8x7B-Instruct-v0.1")
+        tokenizer = AutoTokenizer.from_pretrained(
+            "mistralai/Mixtral-8x7B-Instruct-v0.1",
+            revision="eba92302a2861cdc0098cc54bc9f17cb2c47eb61",
+        )
     except Exception as e:
         print(f"⚠️  Could not load tokenizer: {e}")
         tokenizer = None
 
     if tokenizer:
         token_counts = mbpp.count_tokens(test_examples, tokenizer)
-        print(f"✅ Token counts calculated:")
+        print("✅ Token counts calculated:")
         print(f"   - Total tokens: {token_counts['total_tokens']:,}")
         print(f"   - Avg prompt tokens: {token_counts['avg_prompt_tokens']:.1f}")
         print(f"   - Avg code tokens: {token_counts['avg_code_tokens']:.1f}")
@@ -315,7 +348,7 @@ def test_loaders():
         # Memory estimation
         print("\n4. Memory footprint estimation (for 10 examples)...")
         memory = MBPPLoader.estimate_memory(token_counts)
-        print(f"✅ Memory estimates:")
+        print("✅ Memory estimates:")
         print(f"   - Embeddings: {memory['embeddings_gb']:.4f} GB")
         print(f"   - Activations: {memory['activations_gb']:.4f} GB")
         print(f"   - Total: {memory['total_estimated_gb']:.4f} GB")
@@ -324,19 +357,19 @@ def test_loaders():
         print("\n5. Estimated memory for full 974 examples...")
         full_token_counts = {k: v * (974 / 10) for k, v in token_counts.items()}
         full_memory = MBPPLoader.estimate_memory(full_token_counts)
-        print(f"✅ Full dataset memory estimates:")
+        print("✅ Full dataset memory estimates:")
         print(f"   - Embeddings: {full_memory['embeddings_gb']:.2f} GB")
         print(f"   - Activations: {full_memory['activations_gb']:.2f} GB")
         print(f"   - Total: {full_memory['total_estimated_gb']:.2f} GB")
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("✅ MBPP acceptance criteria met!")
-    print("="*60)
+    print("=" * 60)
 
     # Test GSM8K
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("GSM8K Loader - Acceptance Criteria Test")
-    print("="*60)
+    print("=" * 60)
 
     gsm8k = GSM8KLoader()
 
@@ -346,7 +379,9 @@ def test_loaders():
     test_examples_gsm = gsm8k.load(split="test")
 
     total_gsm = len(train_examples) + len(test_examples_gsm)
-    print(f"✅ Loaded {total_gsm} examples (train: {len(train_examples)}, test: {len(test_examples_gsm)})")
+    print(
+        f"✅ Loaded {total_gsm} examples (train: {len(train_examples)}, test: {len(test_examples_gsm)})"
+    )
 
     # Test on 10 examples
     print("\n2. Testing on 10 examples...")
@@ -357,7 +392,7 @@ def test_loaders():
     print("\n3. Counting tokens...")
     if tokenizer:
         token_counts_gsm = gsm8k.count_tokens(test_examples_gsm_small, tokenizer)
-        print(f"✅ Token counts calculated:")
+        print("✅ Token counts calculated:")
         print(f"   - Total tokens: {token_counts_gsm['total_tokens']:,}")
         print(f"   - Avg question tokens: {token_counts_gsm['avg_question_tokens']:.1f}")
         print(f"   - Avg answer tokens: {token_counts_gsm['avg_answer_tokens']:.1f}")
@@ -366,19 +401,19 @@ def test_loaders():
         # Memory estimation
         print("\n4. Memory footprint estimation (for 10 examples)...")
         memory_gsm = GSM8KLoader.estimate_memory(token_counts_gsm)
-        print(f"✅ Memory estimates:")
+        print("✅ Memory estimates:")
         print(f"   - Total: {memory_gsm['total_estimated_gb']:.4f} GB")
 
         # Scale to full dataset
         print("\n5. Estimated memory for full dataset...")
         full_token_counts_gsm = {k: v * (total_gsm / 10) for k, v in token_counts_gsm.items()}
         full_memory_gsm = GSM8KLoader.estimate_memory(full_token_counts_gsm)
-        print(f"✅ Full dataset memory estimates:")
+        print("✅ Full dataset memory estimates:")
         print(f"   - Total: {full_memory_gsm['total_estimated_gb']:.2f} GB")
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("✅ All acceptance criteria met (MBPP + GSM8K)!")
-    print("="*60)
+    print("=" * 60)
 
 
 if __name__ == "__main__":

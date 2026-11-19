@@ -10,7 +10,7 @@ Research on predicting expert activations in sparse MoE models to enable specula
 
 ## Project Structure
 
-```
+```text
 moe/
 ├── SYSTEM_DESIGN.md          # Main technical document
 ├── docs/
@@ -34,12 +34,16 @@ Mixture-of-Experts (MoE) models like Mixtral 8x7B route each token to a sparse s
 
 See [`SYSTEM_DESIGN.md`](SYSTEM_DESIGN.md) for full technical roadmap.
 
----
+______________________________________________________________________
 
 ## Contributors
 
 See [CONTRIBUTORS.md](CONTRIBUTORS.md) for team details.
 
----
+______________________________________________________________________
 
 For questions or context, see [`docs/conversations/`](docs/conversations/) for design discussions.
+
+## Ordered CI checks
+
+Pull requests run formatting, lint, dependency and source-security checks, unit tests, integration tests, and environment CLI E2E tests in order. The final `cpu-tests` result requires every stage to pass. See [the CI guide](docs/CI.md) for local commands, locked dependencies, GPU evidence, and pipeline details.

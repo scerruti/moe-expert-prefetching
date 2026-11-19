@@ -9,13 +9,11 @@ Handles:
 - Preparing output format for Phase 1 routing telemetry capture
 """
 
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import List, Dict, Any
 import json
 import logging
-
-import torch
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +21,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class TokenMetadata:
     """Metadata for a single token occurrence."""
+
     token_id: int
     token_str: str
     position: int
@@ -32,6 +31,7 @@ class TokenMetadata:
 @dataclass
 class TokenStats:
     """Aggregate statistics for a token across all occurrences."""
+
     token_id: int
     token_str: str
     occurrence_count: int = 0
@@ -120,11 +120,7 @@ class TokenizationPipeline:
 
     def get_repeated_tokens(self) -> List[TokenStats]:
         """Get tokens that appear multiple times across the batch."""
-        return [
-            stats
-            for stats in self.token_stats.values()
-            if stats.occurrence_count > 1
-        ]
+        return [stats for stats in self.token_stats.values() if stats.occurrence_count > 1]
 
     def save_stats(self, output_path: Path):
         """Save token statistics to JSON for inspection."""

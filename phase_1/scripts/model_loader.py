@@ -17,12 +17,12 @@ Usage:
         gate = loader.get_router_gate(layer)
 """
 
+import logging
 import os
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-from typing import Tuple, Optional, Dict, Any
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +33,7 @@ class ModelConfig:
     MODELS = {
         "qwen1.5-moe-a2.7b": {
             "model_id": "Qwen/Qwen1.5-MoE-A2.7B-Chat",
+            "revision": "ec052fda178e241c7c443468d2fa1db6618996be",
             "router_gate_path": "mlp.gate",
             "num_experts": 60,
             "top_k": 4,
@@ -41,6 +42,7 @@ class ModelConfig:
         },
         "mixtral-8x7b": {
             "model_id": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+            "revision": "eba92302a2861cdc0098cc54bc9f17cb2c47eb61",
             "router_gate_path": "block_sparse_moe.gate",
             "num_experts": 8,
             "top_k": 2,
@@ -48,6 +50,7 @@ class ModelConfig:
         },
         "qwen3-vl-30b": {
             "model_id": "Qwen/Qwen3-VL-30B-A3B-Instruct",
+            "revision": "9c4b90e1e4ba969fd3b5378b57d966d725f1b86c",
             "router_gate_path": "mlp.gate",
             "num_experts": 128,
             "top_k": 6,
@@ -56,6 +59,7 @@ class ModelConfig:
         },
         "deepseek-v2-lite": {
             "model_id": "deepseek-ai/DeepSeek-V2-Lite",
+            "revision": "604d5664dddd88a0433dbae533b7fe9472482de0",
             "router_gate_path": "mlp.gate",
             "num_experts": 64,
             "top_k": 6,
@@ -75,7 +79,13 @@ class ModelConfig:
 class ModelLoader:
     """Load MoE models with hardware detection and memory optimization."""
 
-    def __init__(self, model_name: str, device: Optional[str] = None, dtype: torch.dtype = torch.float16, load_in_4bit: bool = False):
+    def __init__(
+        self,
+        model_name: str,
+        device: Optional[str] = None,
+        dtype: torch.dtype = torch.float16,
+        load_in_4bit: bool = False,
+    ):
         """
         Initialize loader for a specific model.
 
@@ -109,16 +119,17 @@ class ModelLoader:
         logger.warning("No GPU detected, using CPU (slow)")
         return "cpu"
 
-    def load_tokenizer(self, trust_remote_code: bool = True) -> Any:
+    def load_tokenizer(self, trust_remote_code: bool = False) -> Any:
         """Load only the tokenizer (a few MB), padding on the left like load() does."""
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.model_id,
+            revision=self.config["revision"],
             trust_remote_code=trust_remote_code,
             padding_side="left",
         )
         return self.tokenizer
 
-    def load(self, trust_remote_code: bool = True) -> Tuple[Any, Any, Dict[str, Any]]:
+    def load(self, trust_remote_code: bool = False) -> Tuple[Any, Any, Dict[str, Any]]:
         """
         Load model and tokenizer.
 
@@ -154,18 +165,16 @@ class ModelLoader:
             )
             load_kwargs["quantization_config"] = quantization_config
         else:
-            # Without torch_dtype, transformers 4.45 loads in fp32 (~57 GB for
-            # Qwen1.5-MoE-A2.7B), which doesn't fit a 40 GB A100; fp16 is ~29 GB
-            load_kwargs["torch_dtype"] = self.dtype
+            # Explicit fp16 keeps the full model within the A100 memory budget.
+            load_kwargs["dtype"] = self.dtype
 
         self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_id,
-            **load_kwargs
+            self.model_id, revision=self.config["revision"], **load_kwargs
         )
 
         self.model.eval()
 
-        logger.info(f"Model loaded successfully")
+        logger.info("Model loaded successfully")
         logger.info(f"  Total parameters: {self._count_parameters(self.model) / 1e9:.1f}B")
 
         return self.model, self.tokenizer, self.config
@@ -232,7 +241,9 @@ class ModelLoader:
 
         success = True
         if actual_experts != num_experts:
-            logger.error(f"Architecture mismatch: expected {num_experts} experts, got {actual_experts}")
+            logger.error(
+                f"Architecture mismatch: expected {num_experts} experts, got {actual_experts}"
+            )
             success = False
         else:
             logger.info(f"✅ Experts: {actual_experts}")
@@ -263,7 +274,9 @@ class ModelLoader:
         decoded_text = self.tokenizer.decode(token_ids, skip_special_tokens=True)
 
         if decoded_text.strip() == sample_text.strip():
-            logger.info(f"✅ Tokenizer roundtrip: '{sample_text}' -> {len(token_ids)} tokens -> '{decoded_text}'")
+            logger.info(
+                f"✅ Tokenizer roundtrip: '{sample_text}' -> {len(token_ids)} tokens -> '{decoded_text}'"
+            )
             return True
         else:
             logger.error(f"Tokenizer roundtrip failed: '{sample_text}' != '{decoded_text}'")

@@ -1,0 +1,56 @@
+name: Record reviewed GPU result
+'on':
+  workflow_dispatch:
+    inputs:
+      pull_request:
+        description: PR number whose current head was tested
+        required: true
+        type: string
+      tested_sha:
+        description: Full SHA recorded by scripts/run_gpu_tests.sh
+        required: true
+        type: string
+      result:
+        description: Actual GPU test and collection result
+        required: true
+        type: choice
+        options:
+        - success
+        - failure
+        - error
+      evidence_url:
+        description: HTTPS link to GPU logs, environment and validation
+        required: true
+        type: string
+permissions:
+  contents: read
+  checks: read
+  statuses: write
+jobs:
+  attest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+    - name: Check PR head and prior CI, then record manual attestation
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPOSITORY: ${{ github.repository }}
+        PR: ${{ inputs.pull_request }}
+        TESTED_SHA: ${{ inputs.tested_sha }}
+        RESULT: ${{ inputs.result }}
+        EVIDENCE: ${{ inputs.evidence_url }}
+      run: |
+        set -euo pipefail
+        [[ "$PR" =~ ^[1-9][0-9]*$ ]]
+        [[ "$TESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+        [[ "$EVIDENCE" == https://* ]]
+        [[ "$RESULT" =~ ^(success|failure|error)$ ]]
+        head_sha="$(gh api "repos/$REPOSITORY/pulls/$PR" --jq '.head.sha')"
+        [[ "$head_sha" == "$TESTED_SHA" ]]
+        if [[ "$RESULT" == success ]]; then
+          passed="$(gh api "repos/$REPOSITORY/commits/$TESTED_SHA/check-runs" --jq '[.check_runs[] | select(.name == "cpu-tests" and .app.slug == "github-actions")] | sort_by(.id) | last | .conclusion')"
+          [[ "$passed" == success ]]
+        fi
+        gh api --method POST "repos/$REPOSITORY/statuses/$TESTED_SHA" \
+          -f context=gpu-tests -f state="$RESULT" -f target_url="$EVIDENCE" \
+          -f description="Manually attested GPU result; inspect linked evidence"

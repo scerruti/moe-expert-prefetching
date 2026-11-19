@@ -7,8 +7,8 @@
 **Do not claim "Acceptance Criteria Met" in the PR unless you have:**
 
 1. **Actually run the acceptance tests** — Run pytest on all test files related to your feature
-2. **Included test output** — Paste the passing test results in the PR description
-3. **Verified integration** — Test that your changes work with dependent code
+1. **Included test output** — Paste the passing test results in the PR description
+1. **Verified integration** — Test that your changes work with dependent code
 
 ### Example PR Description Format
 
@@ -20,9 +20,11 @@
 
 ### Tests Run and Passing
 ```
+
 pytest phase_1/scripts/test_forward_pass.py -v
 ================ 6 passed in 2.34s ================
-```
+
+```text
 
 ### Tests Verified
 - ✅ test_hook_registration_and_firing() 
@@ -44,9 +46,9 @@ pytest phase_1/scripts/test_forward_pass.py -v
 **Before submitting a PR:**
 
 1. Run all relevant tests: `pytest phase_1/scripts/test_*.py`
-2. Check that tests actually pass (don't assume)
-3. Include test output in PR description as proof
-4. If tests don't exist, write them first
+1. Check that tests actually pass (don't assume)
+1. Include test output in PR description as proof
+1. If tests don't exist, write them first
 
 ## Lesson Learned
 
@@ -68,3 +70,11 @@ pytest phase_1/scripts/test_forward_pass.py -v
 - **GPU tests** carry the `gpu` marker (any test using the `qwen_model` fixture gets it automatically). Load the model only through that fixture: without a GPU, `ModelLoader.load()` refuses to start, so a test that loads it directly fails in CI. They run on Colab with `pytest -m gpu` at the PR's final commit (#113).
 - **If the CPU check fails for a reason that isn't your code,** check whether the Hugging Face Hub is down: the tests download datasets and the tokenizer from it. Say so on the PR. Re-run the check once the Hub is back, or ask an admin to merge past it, noting why on the PR.
 - **Every PR fills in the acceptance-criteria table** in the PR template: each criterion, the test that proves it, and where it ran.
+
+## Ordered CI and test-first fixes
+
+Follow the commands and contracts in [docs/CI.md](docs/CI.md). Fixes need an independently expected result and a regression test that fails before the implementation changes. Record the old-fails/new-passes evidence in the PR.
+
+Classify tests as unit, integration, or E2E; GPU and network requirements are separate. Never remove a test from discovery to make a stage pass. An empty or skipped required suite fails.
+
+Dependency and source-security findings block according to the documented policy. Do not add blanket vulnerability ignores or automatically update scientific dependencies just to clear the job. A dependency update needs compatibility tests and fresh GPU evidence where it changes inference.

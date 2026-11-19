@@ -11,16 +11,16 @@ Validates all acceptance criteria:
 """
 
 import time
-import torch
-import pytest
-from transformers import AutoConfig, AutoModelForCausalLM
 
+import pytest
+import torch
 from pytorch_forward_hooks import (
     QWEN_TOP_K,
     RoutingDataBuffer,
     create_router_hook,
     register_router_hooks,
 )
+from transformers import AutoConfig, AutoModelForCausalLM
 
 
 class TestRoutingDataBuffer:
@@ -38,9 +38,9 @@ class TestRoutingDataBuffer:
 
         data = buffer.get_all()
         assert len(data) == 1
-        assert data[0]['layer_idx'] == 0
-        assert data[0]['logits'].shape == dummy_logits.shape
-        assert data[0]['probabilities'].shape == dummy_probs.shape
+        assert data[0]["layer_idx"] == 0
+        assert data[0]["logits"].shape == dummy_logits.shape
+        assert data[0]["probabilities"].shape == dummy_probs.shape
 
     def test_buffer_detaches_and_moves_to_cpu(self):
         """Verify buffer detaches tensors and moves to CPU."""
@@ -54,10 +54,10 @@ class TestRoutingDataBuffer:
         data = buffer.get_all()
 
         # Verify tensors are detached and on CPU
-        assert not data[0]['logits'].requires_grad
-        assert data[0]['logits'].device.type == 'cpu'
-        assert not data[0]['probabilities'].requires_grad
-        assert data[0]['probabilities'].device.type == 'cpu'
+        assert not data[0]["logits"].requires_grad
+        assert data[0]["logits"].device.type == "cpu"
+        assert not data[0]["probabilities"].requires_grad
+        assert data[0]["probabilities"].device.type == "cpu"
 
     def test_buffer_multiple_entries(self):
         """Verify buffer handles multiple entries correctly."""
@@ -72,7 +72,7 @@ class TestRoutingDataBuffer:
         data = buffer.get_all()
         assert len(data) == 5
         for i, entry in enumerate(data):
-            assert entry['layer_idx'] == i
+            assert entry["layer_idx"] == i
 
 
 class TestRouterHooks:
@@ -88,12 +88,12 @@ class TestRouterHooks:
         config.hidden_size = 64
         config.intermediate_size = 256
         config.num_attention_heads = 4
-        if hasattr(config, 'num_key_value_heads'):
+        if hasattr(config, "num_key_value_heads"):
             config.num_key_value_heads = 2
         # MoE config
         config.num_experts = 8
         config.num_experts_per_tok = QWEN_TOP_K
-        return AutoModelForCausalLM.from_config(config)
+        return AutoModelForCausalLM.from_config(config, dtype=torch.float32)
 
     def test_hooks_fire_on_all_layers(self, toy_model):
         """AC: Hooks fire on all 32 layers (test with 4-layer toy model)."""
@@ -138,7 +138,7 @@ class TestRouterHooks:
 
         # Verify logits shape and properties
         for data in collected:
-            logits = data['logits']
+            logits = data["logits"]
             # Logits are flattened: [batch_size * seq_len, num_experts]
             assert logits.shape == (batch_size * seq_len, config.num_experts)
             # Logits should NOT be normalized (sum to num_experts, not 1)
@@ -165,7 +165,7 @@ class TestRouterHooks:
 
         # Verify probabilities are normalized (sum to 1)
         for data in collected:
-            probs = data['probabilities']
+            probs = data["probabilities"]
             assert probs.shape == (batch_size * seq_len, config.num_experts)
             sums = probs.sum(dim=-1)
             assert torch.allclose(sums, torch.ones_like(sums), atol=1e-5)
@@ -192,7 +192,7 @@ class TestRouterHooks:
 
         # Verify top-k indices shape and validity
         for data in collected:
-            topk = data['topk_indices']
+            topk = data["topk_indices"]
             # Indices are flattened: [batch_size * seq_len, num_experts_per_tok]
             assert topk.shape == (batch_size * seq_len, QWEN_TOP_K)
             # Indices should be in valid range [0, num_experts)
@@ -249,14 +249,14 @@ class TestRouterHooks:
 
         # Verify all required fields present
         for data in collected:
-            assert 'layer_idx' in data
-            assert 'logits' in data
-            assert 'probabilities' in data
-            assert 'topk_indices' in data
-            assert isinstance(data['layer_idx'], int)
-            assert isinstance(data['logits'], torch.Tensor)
-            assert isinstance(data['probabilities'], torch.Tensor)
-            assert isinstance(data['topk_indices'], torch.Tensor)
+            assert "layer_idx" in data
+            assert "logits" in data
+            assert "probabilities" in data
+            assert "topk_indices" in data
+            assert isinstance(data["layer_idx"], int)
+            assert isinstance(data["logits"], torch.Tensor)
+            assert isinstance(data["probabilities"], torch.Tensor)
+            assert isinstance(data["topk_indices"], torch.Tensor)
 
         for handle in handles:
             handle.remove()
@@ -278,8 +278,8 @@ class TestRouterHooks:
 
         # Verify that probabilities are softmax of logits
         for data in collected:
-            logits = data['logits']
-            probs = data['probabilities']
+            logits = data["logits"]
+            probs = data["probabilities"]
 
             # Manually compute softmax from logits
             expected_probs = torch.softmax(logits, dim=-1)

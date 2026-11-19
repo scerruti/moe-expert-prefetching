@@ -10,10 +10,10 @@ GPU tests run on Colab (#113). Any test using the qwen_model fixture is marked
 machine needs about 29 GB and has crashed laptops (#87).
 """
 
-import pytest
-import torch
 import logging
 
+import pytest
+import torch
 from model_loader import ModelLoader
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,9 @@ GPU_FIXTURES = {"qwen_model"}
 
 
 def pytest_configure(config):
-    config.addinivalue_line("markers", "gpu: needs a CUDA GPU and the real model (run on Colab, not in CI)")
+    config.addinivalue_line(
+        "markers", "gpu: needs a CUDA GPU and the real model (run on Colab, not in CI)"
+    )
 
 
 def pytest_collection_modifyitems(config, items):

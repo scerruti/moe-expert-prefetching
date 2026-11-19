@@ -16,9 +16,7 @@ from data_collection import get_prompt_text, load_datasets, run_collection, shuf
 def make_datasets(n=10):
     """10-example subsets shaped like the real loader output."""
     return {
-        "gsm8k": [
-            {"example_id": i, "question": f"q{i}", "source": "gsm8k"} for i in range(n)
-        ],
+        "gsm8k": [{"example_id": i, "question": f"q{i}", "source": "gsm8k"} for i in range(n)],
         "mbpp": [{"task_id": i, "prompt": f"p{i}", "source": "mbpp"} for i in range(n)],
     }
 
@@ -50,17 +48,13 @@ class DataCollectionTests(unittest.TestCase):
         calls, _ = collect(make_datasets(3), num_runs=2)
         sequence = [(run, name) for run, name, _, _ in calls]
 
-        expected = [
-            (r, n) for r in range(2) for n in ["gsm8k", "mbpp"] for _ in range(3)
-        ]
+        expected = [(r, n) for r in range(2) for n in ["gsm8k", "mbpp"] for _ in range(3)]
         self.assertEqual(sequence, expected)
 
     def test_runs_use_different_orderings(self):
         calls, _ = collect(make_datasets())
         orders = {
-            tuple(
-                ex["example_id"] for r, n, _, ex in calls if r == run and n == "gsm8k"
-            )
+            tuple(ex["example_id"] for r, n, _, ex in calls if r == run and n == "gsm8k")
             for run in range(5)
         }
         self.assertGreater(len(orders), 1)
@@ -194,9 +188,7 @@ class RealDataTests(unittest.TestCase):
         except (ConnectionError, OSError) as e:
             self.skipTest(f"Hugging Face hub unreachable: {e}")
 
-        self.assertEqual(
-            {k: len(v) for k, v in loaded.items()}, {"gsm8k": 10, "mbpp": 10}
-        )
+        self.assertEqual({k: len(v) for k, v in loaded.items()}, {"gsm8k": 10, "mbpp": 10})
         for name, examples in loaded.items():
             for ex in examples:
                 self.assertTrue(get_prompt_text(name, ex).strip())

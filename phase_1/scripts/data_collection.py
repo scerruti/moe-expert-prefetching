@@ -108,9 +108,10 @@ def run_collection(
     seeds = []
     processed = 0
 
-    with logging_redirect_tqdm(), tqdm(
-        total=total, desc="Collecting", unit="prompt", disable=not show_progress
-    ) as pbar:
+    with (
+        logging_redirect_tqdm(),
+        tqdm(total=total, desc="Collecting", unit="prompt", disable=not show_progress) as pbar,
+    ):
         for run_idx in range(num_runs):
             seed = run_seed(base_seed, run_idx)
             seeds.append(seed)
@@ -147,9 +148,7 @@ def main():
     parser.add_argument("--seed", type=int, default=DEFAULT_BASE_SEED)
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     datasets = load_datasets(num_examples=args.num_examples)
     for name, examples in datasets.items():

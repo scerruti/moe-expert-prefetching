@@ -60,3 +60,10 @@ scripts/phase*/
 *.pdf (keep references/, exclude others)
 *.mp4
 *.mov
+
+# CI evidence and local tooling
+reports/
+.pytest_cache/
+.ruff_cache/
+.venv/
+.coverage*

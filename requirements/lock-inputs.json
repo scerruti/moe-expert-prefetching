@@ -1,0 +1,14 @@
+{
+  "python": "3.13",
+  "platform": "x86_64-unknown-linux-gnu",
+  "sha256": {
+    "requirements.txt": "1681a0cf8ab5b3ba66c5ba9aa150d80715139f2963faa80c0761eb4f88fcdd06",
+    "scripts/update_locks.py": "4ff6158e9b33c85f221c33b0089997c21e283b2b60f73c3e729e238420f6fc60",
+    "requirements/ci-tools.in": "e5e6903eebb92d6ee8a1d4aaed24ecfb76d2e4dbc9365e1a713b6e7dda87cab8",
+    "requirements/ci-tools.lock": "ba397ebb15cf742b6eff4c618d97df09f1f3caf8b1d56834cf6a836d5e7e173d",
+    "requirements/cpu.in": "69c65f7998ef21ec2b7edc38a7362e1d41478293410311c4617ab2b4d61d8bf4",
+    "requirements/cpu.lock": "304170ac97de8e94a5ab65385ac4d4fb27852bdcaaed3591dabdc2f504c687ee",
+    "requirements/gpu.in": "69c65f7998ef21ec2b7edc38a7362e1d41478293410311c4617ab2b4d61d8bf4",
+    "requirements/gpu.lock": "5f912bc42b81688c70fd05cefe4f5161a3b5e8445b20c4e96865b04d194449ec"
+  }
+}

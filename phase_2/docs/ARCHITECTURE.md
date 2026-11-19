@@ -1,15 +1,15 @@
 # Phase 2 Architecture: Statistical Analysis Pipeline
 
-**Last Updated:** 2026-10-02  
+**Last Updated:** 2026-10-02\
 **Model:** Qwen1.5-MoE-A2.7B (MVP), DeepSeek-V2-Lite (optional research extension)
 
----
+______________________________________________________________________
 
 ## System Overview
 
 Phase 2 transforms Phase 1's raw routing traces into actionable statistical insights through a modular analysis pipeline.
 
-```
+```text
 Phase 1 Outputs (Parquet Files)
   ├─ gsm8k_routing_traces.parquet
   └─ mbpp_routing_traces.parquet
@@ -52,7 +52,7 @@ Phase 1 Outputs (Parquet Files)
   └─ Phase 3 Recommendations
 ```
 
----
+______________________________________________________________________
 
 ## Component Architectures
 
@@ -63,52 +63,52 @@ Phase 1 Outputs (Parquet Files)
 ```python
 class RoutingDataLoader:
     """Unified interface for loading Phase 1 Parquet files."""
-    
+
     def __init__(self, parquet_path: str, model_name: str):
         self.parquet_path = parquet_path
         self.model_name = model_name  # "qwen" or "deepseek"
         self.data = None
-        
+
     def load(self) -> pl.DataFrame:
         """Load Parquet file using Polars."""
         # Load with optimizations (lazy evaluation, streaming)
-        
+
     def validate_schema(self) -> dict:
         """Verify schema against SYSTEM_DESIGN.md spec."""
         # Check 9 required columns, types, ranges
-        
+
     def quality_report(self) -> dict:
         """Generate data quality statistics."""
         # Missing values, null counts, range checks
-        
+
     def summary_stats(self) -> pd.DataFrame:
         """Compute aggregate statistics."""
         # Tokens per layer, experts per layer, etc.
 ```
 
 **Outputs:**
+
 - `data_quality_report.md` – Human-readable quality assessment
 - `summary_statistics.csv` – Aggregate stats table
 - `memory_profile.txt` – Peak RAM usage during load
 
----
+______________________________________________________________________
 
 ### Component 2: Determinism Verification (#41)
 
 **Module:** `phase_2/scripts/determinism.py`
 
 ```python
-def verify_determinism(loader: RoutingDataLoader, 
-                      sample_size: int = 200) -> dict:
+def verify_determinism(loader: RoutingDataLoader, sample_size: int = 200) -> dict:
     """
     Verify bitwise determinism across 5 Phase 1 runs.
-    
+
     Strategy:
     1. Stratified random sample (200 prompts per dataset)
     2. For each prompt, compare probabilities across 5 runs
     3. Compute max deviation per token/layer/expert
     4. Pass criterion: max_deviation < 1e-6
-    
+
     Returns:
         dict with keys:
         - pass_fail: bool (True if max_deviation < threshold)
@@ -118,16 +118,18 @@ def verify_determinism(loader: RoutingDataLoader,
     """
     pass
 
+
 def plot_determinism(stats: dict) -> None:
     """Visualization: max deviation per layer, per expert."""
     pass
 ```
 
 **Outputs:**
+
 - `determinism_verification.md` – Pass/fail report with findings
 - `determinism_statistics.csv` – Detailed deviation table
 
----
+______________________________________________________________________
 
 ### Component 3: Baseline Distributions (#42)
 
@@ -137,12 +139,12 @@ def plot_determinism(stats: dict) -> None:
 def compute_distributions(loader: RoutingDataLoader) -> dict:
     """
     Compute per-layer, per-expert probability distributions.
-    
+
     For each layer and domain (GSM8K/MBPP):
     1. Aggregate expert probabilities across all prompts
     2. Calculate: mean, median, std, min, max, quantiles (25/50/75/95)
     3. Handle token averaging (same token, multiple prompts)
-    
+
     Returns:
         dict[layer_idx][domain] = {
             'mean': array([128]),      # mean prob per expert
@@ -153,8 +155,8 @@ def compute_distributions(loader: RoutingDataLoader) -> dict:
     """
     pass
 
-def distribution_comparison(distributions: dict, 
-                           layer_idx: int) -> pd.DataFrame:
+
+def distribution_comparison(distributions: dict, layer_idx: int) -> pd.DataFrame:
     """
     Compare distributions GSM8K vs MBPP for a single layer.
     Returns table with mean/std/quantiles side-by-side.
@@ -163,10 +165,11 @@ def distribution_comparison(distributions: dict,
 ```
 
 **Outputs:**
+
 - `baseline_distributions.json` – Complete statistical tensors
 - `distributions_by_layer.csv` – Human-readable summaries
 
----
+______________________________________________________________________
 
 ### Component 4: Layer-wise Summaries (#43)
 
@@ -176,13 +179,13 @@ def distribution_comparison(distributions: dict,
 def layer_statistics(distributions: dict) -> dict:
     """
     Per-layer summaries: top experts, utilization, entropy.
-    
+
     For each layer:
     1. Top-k activated experts (by mean probability)
     2. Expert utilization rate (fraction > threshold)
     3. Shannon entropy of routing distribution
     4. Per-domain comparison
-    
+
     Returns:
         dict[layer_idx] = {
             'top_experts_gsm8k': list,        # [expert_id, ...]
@@ -197,11 +200,12 @@ def layer_statistics(distributions: dict) -> dict:
 ```
 
 **Outputs:**
+
 - `layer_summaries.json` – Full layer profiles
 - `layer_profiles.csv` – Spreadsheet-friendly format
 - `entropy_analysis.csv` – Entropy ranking by layer
 
----
+______________________________________________________________________
 
 ### Component 5 & 6: Token Analysis (#44, #45)
 
@@ -211,7 +215,7 @@ def layer_statistics(distributions: dict) -> dict:
 def identify_shared_tokens(loader: RoutingDataLoader) -> dict:
     """
     Build vocabulary overlap between GSM8K and MBPP.
-    
+
     Returns:
         dict with keys:
         - 'shared_tokens': list of token_ids
@@ -223,17 +227,17 @@ def identify_shared_tokens(loader: RoutingDataLoader) -> dict:
     """
     pass
 
-def token_divergence_analysis(loader: RoutingDataLoader,
-                             shared_tokens: dict) -> pd.DataFrame:
+
+def token_divergence_analysis(loader: RoutingDataLoader, shared_tokens: dict) -> pd.DataFrame:
     """
     KL divergence per shared token across domains.
-    
+
     For each shared token:
     1. Extract probability distributions (GSM8K vs MBPP) per layer
     2. Compute KL divergence(GSM8K || MBPP) per layer
     3. Aggregate across layers (mean, max)
     4. Rank tokens by divergence
-    
+
     Returns:
         DataFrame with columns:
         - token_id, token_str
@@ -244,11 +248,12 @@ def token_divergence_analysis(loader: RoutingDataLoader,
 ```
 
 **Outputs:**
+
 - `shared_tokens.csv` – Shared token inventory with frequencies
 - `token_overlap_analysis.md` – Summary statistics and insights
 - `token_divergence.csv` – Ranked tokens by cross-domain divergence
 
----
+______________________________________________________________________
 
 ### Component 7: Jensen-Shannon Divergence (#46)
 
@@ -258,21 +263,21 @@ def token_divergence_analysis(loader: RoutingDataLoader,
 def jensen_shannon_divergence(distributions: dict) -> dict:
     """
     Compute JSD between domain-averaged distributions.
-    
+
     Global Level:
     1. Average all expert probabilities across GSM8K
     2. Average all expert probabilities across MBPP
     3. Compute JS divergence between these distributions
-    
+
     Per-Layer Level:
     1. Repeat (1-3) for each layer independently
     2. Compute bootstrap confidence intervals (n=1000)
     3. Statistical significance testing
-    
+
     Per-Expert Level:
     1. For each expert, compute divergence across domains
     2. Rank experts by specialization
-    
+
     Returns:
         dict with keys:
         - 'global_jsd': float
@@ -283,11 +288,11 @@ def jensen_shannon_divergence(distributions: dict) -> dict:
     """
     pass
 
-def jsd_significance_test(distributions: dict,
-                         n_bootstrap: int = 1000) -> pd.DataFrame:
+
+def jsd_significance_test(distributions: dict, n_bootstrap: int = 1000) -> pd.DataFrame:
     """
     Bootstrap-based significance testing for JSD values.
-    
+
     Returns DataFrame with:
     - layer_idx, jsd_value, ci_lower, ci_upper, p_value
     """
@@ -295,11 +300,12 @@ def jsd_significance_test(distributions: dict,
 ```
 
 **Outputs:**
+
 - `jsd_analysis.json` – Complete JSD results with confidence intervals
 - `jsd_significance.csv` – Significance testing results
 - `jsd_per_expert.csv` – Expert-level divergence rankings
 
----
+______________________________________________________________________
 
 ### Component 8: Expert Profiling (#47)
 
@@ -309,13 +315,13 @@ def jsd_significance_test(distributions: dict,
 def expert_profiles(distributions: dict) -> pd.DataFrame:
     """
     Characterize each expert's routing behavior.
-    
+
     For each expert across all layers:
     1. Activation frequency (% of tokens where expert is top-2)
     2. Mean probability across domains
     3. Domain-specific probability divergence
     4. Specialization classification (universal, domain-specific, etc.)
-    
+
     Returns DataFrame with columns:
     - expert_id
     - activation_freq_gsm8k, activation_freq_mbpp
@@ -325,11 +331,11 @@ def expert_profiles(distributions: dict) -> pd.DataFrame:
     """
     pass
 
-def expert_clustering(expert_profiles: pd.DataFrame,
-                     n_clusters: int = 5) -> dict:
+
+def expert_clustering(expert_profiles: pd.DataFrame, n_clusters: int = 5) -> dict:
     """
     Cluster experts by routing behavior using k-means.
-    
+
     Returns:
         dict[cluster_id] = {
             'experts': list,
@@ -341,32 +347,33 @@ def expert_clustering(expert_profiles: pd.DataFrame,
 ```
 
 **Outputs:**
+
 - `expert_profiles.csv` – Expert-level statistics
 - `expert_specialization.md` – Clustering results and profiles
 
----
+______________________________________________________________________
 
 ### Component 9: Layer Specialization (#48)
 
 **Module:** `phase_2/scripts/layer_specialization.py`
 
 ```python
-def layer_specialization_index(distributions: dict,
-                              jsd_results: dict,
-                              determinism: dict) -> pd.DataFrame:
+def layer_specialization_index(
+    distributions: dict, jsd_results: dict, determinism: dict
+) -> pd.DataFrame:
     """
     Compute specialization index per layer.
-    
+
     Specialization Index combines:
     1. JSD between domains (high = specialized)
     2. Expert utilization divergence (high = specialized)
     3. Top-expert consistency (low = specialized)
-    
+
     Classification:
     - Early layers (0-5): mostly general linguistic processing
     - Mid layers (6-20): domain-specific expert allocation
     - Late layers (21+): integration and refinement
-    
+
     Returns DataFrame with columns:
     - layer_idx
     - specialization_index (0-100)
@@ -378,49 +385,50 @@ def layer_specialization_index(distributions: dict,
 ```
 
 **Outputs:**
+
 - `layer_specialization_index.csv` – Specialization scores per layer
 - `layer_classification.md` – Classification report with Phase 3 recommendations
 
----
+______________________________________________________________________
 
 ### Component 10: Visualizations (#49)
 
 **Module:** `phase_2/scripts/visualization.py`
 
 ```python
-def create_visualizations(loader: RoutingDataLoader,
-                         all_results: dict) -> None:
+def create_visualizations(loader: RoutingDataLoader, all_results: dict) -> None:
     """
     Generate 10+ publication-ready charts.
-    
+
     Charts (organized by analysis type):
-    
+
     Distribution Plots:
     1. Distribution comparison (GSM8K vs MBPP) per selected layers
     2. Expert activation probability density plots
     3. Layer-wise entropy comparison
-    
+
     Heatmaps:
     4. Layer × Expert heatmap (mean probability per domain)
     5. JSD heatmap (layer × expert divergence)
     6. Specialization index heatmap
-    
+
     Scatter/Ranking:
     7. Shared token divergence scatter plot
     8. Expert specialization scatter (activation vs divergence)
     9. Layer specialization bar chart
-    
+
     Composite:
     10. Specialization landscape (layer classification)
     11. Expert clustering visualization
     12. Layer heatmap with annotations
-    
+
     Export formats:
     - PNG (300 dpi for publications)
     - SVG (vector, for editing)
     - Interactive HTML (plotly for exploration)
     """
     pass
+
 
 def create_dashboard(all_results: dict) -> None:
     """
@@ -434,11 +442,12 @@ def create_dashboard(all_results: dict) -> None:
 ```
 
 **Outputs:**
+
 - `phase_2/reports/figures/` – PNG, SVG, PDF charts
 - `phase_2/reports/dashboard.html` – Interactive dashboard
 - `phase_2/scripts/visualization.py` – Reproducible plotting code
 
----
+______________________________________________________________________
 
 ### Component 11: Final Report (#50)
 
@@ -448,7 +457,7 @@ def create_dashboard(all_results: dict) -> None:
 def generate_report(all_results: dict, model_name: str) -> str:
     """
     Synthesize all findings into comprehensive Markdown report.
-    
+
     Report Structure:
     1. Title & Metadata
     2. Executive Summary (1 page)
@@ -465,7 +474,7 @@ def generate_report(all_results: dict, model_name: str) -> str:
     11. Visualizations & Figures
     12. Recommendations for Phase 3
     13. Appendices (detailed tables, confidence intervals)
-    
+
     Export:
     - Markdown (.md) – primary format
     - PDF – via pandoc
@@ -475,15 +484,16 @@ def generate_report(all_results: dict, model_name: str) -> str:
 ```
 
 **Outputs:**
+
 - `PHASE_2_ANALYSIS_REPORT.md` – Main report
 - `PHASE_2_ANALYSIS_REPORT.pdf` – PDF export
 - `README.md` (phase_2/) – Overview and results summary
 
----
+______________________________________________________________________
 
 ## Data Flow & Dependencies
 
-```
+```text
 Phase 1 Parquet Files
     ↓
 [#40] Data Loader
@@ -524,37 +534,40 @@ Phase 1 Parquet Files
         └─ Recommendations for Phase 3
 ```
 
----
+______________________________________________________________________
 
 ## Statistical Methods
 
 ### Jensen-Shannon Divergence
 
-$$D_{JS}(P \| Q) = \frac{1}{2} D_{KL}(P \| M) + \frac{1}{2} D_{KL}(Q \| M)$$
+$$D\_{JS}(P | Q) = \\frac{1}{2} D\_{KL}(P | M) + \\frac{1}{2} D\_{KL}(Q | M)$$
 
-where $M = \frac{1}{2}(P + Q)$ and $D_{KL}$ is Kullback-Leibler divergence.
+where $M = \\frac{1}{2}(P + Q)$ and $D\_{KL}$ is Kullback-Leibler divergence.
 
 **Interpretation:**
+
 - JS = 0: Identical distributions (no domain difference)
 - JS > 0.1: Significant domain-specific routing
 - JS > 0.2: Very strong specialization
 
 ### Specialization Index
 
-$$I_{spec}(l) = w_1 \cdot D_{JS}(l) + w_2 \cdot \Delta_{util}(l) + w_3 \cdot (1 - C_{top}(l))$$
+$$I\_{spec}(l) = w_1 \\cdot D\_{JS}(l) + w_2 \\cdot \\Delta\_{util}(l) + w_3 \\cdot (1 - C\_{top}(l))$$
 
 where:
-- $D_{JS}(l)$ – JSD between domains at layer $l$
-- $\Delta_{util}(l)$ – Expert utilization divergence
-- $C_{top}(l)$ – Top-expert consistency (Jaccard similarity)
+
+- $D\_{JS}(l)$ – JSD between domains at layer $l$
+- $\\Delta\_{util}(l)$ – Expert utilization divergence
+- $C\_{top}(l)$ – Top-expert consistency (Jaccard similarity)
 - $w_1, w_2, w_3$ – Weights (default: 0.5, 0.25, 0.25)
 
----
+______________________________________________________________________
 
 ## Software Stack
 
 ### Required Packages
-```
+
+```text
 scipy>=1.8.0          # KL/JS divergence, statistical tests
 polars>=0.19.0        # Fast Parquet I/O and querying
 duckdb>=0.8.0         # SQL-based analysis (optional)
@@ -567,17 +580,18 @@ plotly>=5.0.0         # Interactive visualizations
 ```
 
 ### Development
-```
+
+```text
 jupyter>=1.0.0        # Interactive notebooks
 black>=23.0.0         # Code formatting
 pytest>=7.0.0         # Testing framework
 ```
 
----
+______________________________________________________________________
 
 ## Code Organization
 
-```
+```text
 phase_2/
 ├── docs/
 │   ├── ARCHITECTURE.md          # This file
@@ -633,49 +647,51 @@ phase_2/
     └── README.md
 ```
 
----
+______________________________________________________________________
 
 ## Model-Specific Considerations
 
 ### Qwen1.5-MoE-A2.7B (MVP)
+
 - **Expert count:** 64 routed experts
 - **Top-k routing:** top-2
 - **Layers:** 24 MoE layers
 - **Expected JSD range:** 0.05-0.2 (moderate specialization)
 
 ### DeepSeek-V2-Lite (Optional Research)
+
 - **Expert count:** 128 routed experts
 - **Top-k routing:** top-6
 - **Layers:** 27 MoE layers (estimated)
 - **Expected JSD range:** 0.08-0.25 (stronger specialization likely)
 - **Note:** Include cross-model comparison if data available
 
----
+______________________________________________________________________
 
 ## Performance Targets
 
-| Metric | Target | Notes |
-|--------|--------|-------|
-| Data loading time | <5 min | Both datasets, Parquet I/O |
-| Determinism check | <10 min | 200 prompt sample |
-| Baseline distributions | <30 min | All layers, aggregations |
-| JSD computation | <20 min | Bootstrap included |
-| Visualizations | <30 min | 10+ charts, all formats |
-| Total pipeline runtime | <3 hours | End-to-end, optimized |
-| Memory peak | <16GB | Single machine sufficient |
+| Metric                 | Target    | Notes                      |
+| ---------------------- | --------- | -------------------------- |
+| Data loading time      | \<5 min   | Both datasets, Parquet I/O |
+| Determinism check      | \<10 min  | 200 prompt sample          |
+| Baseline distributions | \<30 min  | All layers, aggregations   |
+| JSD computation        | \<20 min  | Bootstrap included         |
+| Visualizations         | \<30 min  | 10+ charts, all formats    |
+| Total pipeline runtime | \<3 hours | End-to-end, optimized      |
+| Memory peak            | \<16GB    | Single machine sufficient  |
 
----
+______________________________________________________________________
 
 ## Quality Assurance
 
 ### Validation Checkpoints
 
 1. **Data Quality:** Schema validation, null counts, value ranges
-2. **Determinism:** Max deviation < 1e-6 for sample subset
-3. **Distribution Consistency:** Probabilities sum to 1.0 (within epsilon)
-4. **Statistical Tests:** Bootstrap confidence intervals, p-values
-5. **Visualization Quality:** Charts readable, labels clear, colors accessible
-6. **Report Completeness:** All sections present, no missing figures
+1. **Determinism:** Max deviation < 1e-6 for sample subset
+1. **Distribution Consistency:** Probabilities sum to 1.0 (within epsilon)
+1. **Statistical Tests:** Bootstrap confidence intervals, p-values
+1. **Visualization Quality:** Charts readable, labels clear, colors accessible
+1. **Report Completeness:** All sections present, no missing figures
 
 ### Testing Strategy
 
@@ -690,29 +706,32 @@ tests/
 └── conftest.py                # Fixtures for sample data
 ```
 
----
+______________________________________________________________________
 
 ## Next Phase (Phase 3) Preparation
 
 Phase 2 outputs that feed Phase 3 (Predictor Training):
 
 1. **Layer Specialization Report (#48)**
+
    - Identifies which layers to focus on for predictor training
    - Ranking: layers with highest specialization get most attention
 
-2. **Baseline Distributions (#42)**
+1. **Baseline Distributions (#42)**
+
    - Probability distributions serve as baseline for predictor evaluation
    - Used to compute expected activation patterns
 
-3. **Shared Token Analysis (#45)**
+1. **Shared Token Analysis (#45)**
+
    - Token-level predictions can prioritize high-divergence tokens
    - Universal tokens may be easier to predict
 
-4. **Expert Profiles (#47)**
+1. **Expert Profiles (#47)**
+
    - Clustering results can guide expert grouping for predictor architecture
    - Universal experts may need less prediction overhead
 
----
+______________________________________________________________________
 
 **Status:** ✅ Architecture finalized and ready for implementation
-

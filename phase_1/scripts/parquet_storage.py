@@ -97,8 +97,7 @@ class RoutingParquetWriter:
         self.rows_written += table.num_rows
         self.prompts_written += self._buffered_prompts
         logger.info(
-            f"Wrote {table.num_rows} rows ({self._buffered_prompts} prompts) "
-            f"to {self.path}"
+            f"Wrote {table.num_rows} rows ({self._buffered_prompts} prompts) to {self.path}"
         )
         self._buffer = []
         self._buffered_prompts = 0
