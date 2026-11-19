@@ -13,7 +13,6 @@ import logging
 from pathlib import Path
 
 import torch
-
 from tokenizer import TokenizationPipeline
 
 logging.basicConfig(level=logging.INFO)
@@ -44,7 +43,7 @@ def test_tokenization_basic(qwen_tokenizer):
     logger.info(f"Tokenizing {len(SAMPLE_PROMPTS)} prompts...")
     result = pipeline.tokenize_batch(SAMPLE_PROMPTS)
 
-    logger.info(f"✅ Tokenization successful")
+    logger.info("✅ Tokenization successful")
     logger.info(f"   - Input prompts: {result['metadata']['num_prompts']}")
     logger.info(f"   - Total tokens: {result['metadata']['total_tokens']}")
     logger.info(f"   - Unique tokens: {result['metadata']['unique_tokens']}")
@@ -53,7 +52,7 @@ def test_tokenization_basic(qwen_tokenizer):
     assert result["token_tensors"]["input_ids"].shape[0] == len(SAMPLE_PROMPTS)
     logger.info(f"✅ Tensor shape: {result['token_tensors']['input_ids'].shape}")
 
-    return result
+    return
 
 
 def test_repeated_tokens(qwen_tokenizer):
@@ -65,7 +64,7 @@ def test_repeated_tokens(qwen_tokenizer):
     tokenizer = qwen_tokenizer
 
     pipeline = TokenizationPipeline(tokenizer, "qwen1.5-moe-a2.7b")
-    result = pipeline.tokenize_batch(SAMPLE_PROMPTS)
+    _result = pipeline.tokenize_batch(SAMPLE_PROMPTS)
 
     repeated = pipeline.get_repeated_tokens()
     logger.info(f"Tokens appearing multiple times: {len(repeated)}")
@@ -77,9 +76,9 @@ def test_repeated_tokens(qwen_tokenizer):
         )
 
     assert len(repeated) > 0, "Should have found repeated tokens"
-    logger.info(f"✅ Repeated token tracking works")
+    logger.info("✅ Repeated token tracking works")
 
-    return result
+    return
 
 
 def test_output_format(qwen_tokenizer):
@@ -102,15 +101,15 @@ def test_output_format(qwen_tokenizer):
     # Check tensor format
     assert isinstance(result["token_tensors"]["input_ids"], torch.Tensor)
     assert isinstance(result["token_tensors"]["attention_mask"], torch.Tensor)
-    logger.info(f"✅ Tensor types correct")
+    logger.info("✅ Tensor types correct")
 
     # Check metadata
     metadata = result["metadata"]
     assert metadata["model"] == "qwen1.5-moe-a2.7b"
     assert metadata["num_prompts"] == len(SAMPLE_PROMPTS)
-    logger.info(f"✅ Metadata format correct")
+    logger.info("✅ Metadata format correct")
 
-    return result
+    return
 
 
 def test_stats_persistence(qwen_tokenizer):
@@ -138,9 +137,9 @@ def test_stats_persistence(qwen_tokenizer):
         loaded = json.load(f)
 
     assert len(loaded) == result["metadata"]["unique_tokens"]
-    logger.info(f"✅ Statistics loaded and verified")
+    logger.info("✅ Statistics loaded and verified")
 
-    return True
+    return
 
 
 def test_edge_cases_empty_and_long(qwen_tokenizer):
@@ -171,7 +170,7 @@ def test_edge_cases_empty_and_long(qwen_tokenizer):
     assert tensor_shape[0] == len(edge_prompts)
     logger.info(f"✅ Tensor shape correct: {tensor_shape}")
 
-    return result
+    return
 
 
 def test_special_characters_and_unicode(qwen_tokenizer):
@@ -198,9 +197,9 @@ def test_special_characters_and_unicode(qwen_tokenizer):
     # Verify all token_strs are decodable strings
     for token_str_list in result["token_strs"]:
         assert all(isinstance(ts, str) for ts in token_str_list)
-    logger.info(f"✅ All token strings decoded correctly")
+    logger.info("✅ All token strings decoded correctly")
 
-    return result
+    return
 
 
 def test_duplicate_prompts(qwen_tokenizer):
@@ -220,14 +219,18 @@ def test_duplicate_prompts(qwen_tokenizer):
     # Verify all prompts were processed
     assert result["metadata"]["num_prompts"] == len(dup_prompts)
     assert result["metadata"]["total_tokens"] > 0
-    logger.info(f"✅ Processed {len(dup_prompts)} prompts (with {result['metadata']['unique_tokens']} unique tokens)")
+    logger.info(
+        f"✅ Processed {len(dup_prompts)} prompts (with {result['metadata']['unique_tokens']} unique tokens)"
+    )
 
     # Verify repeated tokens are tracked
     repeated = pipeline.get_repeated_tokens()
     assert len(repeated) > 0, "Should find repeated tokens from duplicate prompts"
-    logger.info(f"✅ Detected {len(repeated)} tokens appearing multiple times across duplicate prompts")
+    logger.info(
+        f"✅ Detected {len(repeated)} tokens appearing multiple times across duplicate prompts"
+    )
 
-    return result
+    return
 
 
 def test_batch_processing_realistic_scale(qwen_tokenizer):
@@ -241,8 +244,7 @@ def test_batch_processing_realistic_scale(qwen_tokenizer):
 
     # Generate realistic batch of 100 prompts
     realistic_batch = [
-        f"Question {i}: What is the solution to {i*2} + {i*3}?"
-        for i in range(100)
+        f"Question {i}: What is the solution to {i * 2} + {i * 3}?" for i in range(100)
     ]
 
     result = pipeline.tokenize_batch(realistic_batch)
@@ -258,7 +260,7 @@ def test_batch_processing_realistic_scale(qwen_tokenizer):
     assert batch_size == 100
     logger.info(f"✅ Tensor batch size: {batch_size}")
 
-    return result
+    return
 
 
 def test_multi_model_compatibility(qwen_tokenizer):
@@ -283,9 +285,9 @@ def test_multi_model_compatibility(qwen_tokenizer):
     for field in required_fields:
         assert field in result_q, f"Missing {field}"
 
-    logger.info(f"✅ All required fields present and compatible across models")
+    logger.info("✅ All required fields present and compatible across models")
 
-    return result_q
+    return
 
 
 def test_output_integration_with_routing(qwen_tokenizer):
@@ -303,20 +305,22 @@ def test_output_integration_with_routing(qwen_tokenizer):
     assert "token_tensors" in result
     assert "input_ids" in result["token_tensors"]
     assert "attention_mask" in result["token_tensors"]
-    logger.info(f"✅ Has token_tensors with input_ids and attention_mask")
+    logger.info("✅ Has token_tensors with input_ids and attention_mask")
 
     # Verify sequence tracking for correlation with routing data
     assert "sequence_ids" in result
     assert len(result["sequence_ids"]) == len(SAMPLE_PROMPTS)
-    logger.info(f"✅ Sequence IDs present for routing correlation ({len(result['sequence_ids'])} sequences)")
+    logger.info(
+        f"✅ Sequence IDs present for routing correlation ({len(result['sequence_ids'])} sequences)"
+    )
 
     # Verify metadata includes model info for Phase 1 schema
     assert "model" in result["metadata"]
     assert "num_prompts" in result["metadata"]
     assert "total_tokens" in result["metadata"]
-    logger.info(f"✅ Metadata complete for Phase 1 routing schema")
+    logger.info("✅ Metadata complete for Phase 1 routing schema")
 
-    return result
+    return
 
 
 def main():

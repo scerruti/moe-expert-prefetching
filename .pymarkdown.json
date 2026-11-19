@@ -1,0 +1,42 @@
+{
+  "plugins": {
+    "md013": {
+      "enabled": false
+    },
+    "md018": {
+      "enabled": false
+    },
+    "md024": {
+      "enabled": false
+    },
+    "md029": {
+      "enabled": false
+    },
+    "md033": {
+      "enabled": false
+    },
+    "md034": {
+      "enabled": false
+    },
+    "md036": {
+      "enabled": false
+    },
+    "md041": {
+      "enabled": false
+    },
+    "md031": {
+      "list_items": false
+    },
+    "md028": {
+      "enabled": false
+    }
+  },
+  "extensions": {
+    "markdown-tables": {
+      "enabled": true
+    },
+    "markdown-task-list-items": {
+      "enabled": true
+    }
+  }
+}

@@ -9,20 +9,23 @@ so routing comes from the model as released.
 
 import pytest
 import torch
+from transformers.models.qwen2_moe.modeling_qwen2_moe import Qwen2MoeTopKRouter
 
 
 def requires_gpu(test):
     """Excluded from CI (`-m "not gpu"`) and skipped without CUDA."""
-    return pytest.mark.gpu(pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU")(test))
+    return pytest.mark.gpu(
+        pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU")(test)
+    )
 
 
 @requires_gpu
 def test_model_is_not_quantized(qwen_model):
-    """#103: no layer is 4-bit; the router gate is a plain fp16 nn.Linear."""
+    """#103: no layer is 4-bit; the native router uses unquantized fp16 weights."""
     model, _, _ = qwen_model
     quantized = [name for name, m in model.named_modules() if type(m).__name__ == "Linear4bit"]
     assert quantized == [], f"{len(quantized)} 4-bit layers, e.g. {quantized[:3]}"
 
     gate = model.model.layers[0].mlp.gate
-    assert type(gate) is torch.nn.Linear
+    assert type(gate) is Qwen2MoeTopKRouter
     assert gate.weight.dtype == torch.float16

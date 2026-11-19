@@ -1,54 +1,163 @@
-# CPU tests on every pull request (any base branch, so stacked PRs are covered)
-# and on pushes to main and the testing branch (#113).
-#
-# Tests that need a CUDA GPU and the real model carry the `gpu` marker and are
-# excluded here; they run on Colab and report a separate status.
-name: CPU tests
-
-on:
-  pull_request:
+name: CI
+'on':
+  pull_request: null
   push:
-    branches: [main, integration/phase-1-validation]
-  workflow_dispatch:
-
+    branches:
+    - main
+    - integration/phase-1-validation
+  workflow_dispatch: null
 permissions:
   contents: read
-
 concurrency:
-  group: cpu-tests-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
+defaults:
+  run:
+    shell: bash
 jobs:
-  cpu-tests:
-    runs-on: ubuntu-latest
+  formatting:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.event.pull_request.head.sha || github.sha }}
+        persist-credentials: false
+    - uses: ./.github/actions/setup-ci
+    - name: Formatting
+      run: |
+        set -euo pipefail
+        ruff format --check . 2>&1 | tee reports/python-format.txt
+        git ls-files -z '*.md' | xargs -0 mdformat --check 2>&1 | tee reports/markdown-format.txt
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: formatting-${{ github.run_attempt }}
+        path: reports/
+        retention-days: 14
+  lint:
+    needs: formatting
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.event.pull_request.head.sha || github.sha }}
+        persist-credentials: false
+    - uses: ./.github/actions/setup-ci
+    - name: Lint
+      run: |
+        set -euo pipefail
+        ruff check . 2>&1 | tee reports/python-lint.txt
+        git ls-files -z '*.md' | xargs -0 pymarkdown --config .pymarkdown.json --strict-config scan 2>&1 | tee reports/markdown-lint.txt
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: lint-${{ github.run_attempt }}
+        path: reports/
+        retention-days: 14
+  security:
+    needs: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.event.pull_request.head.sha || github.sha }}
+        persist-credentials: false
+    - uses: ./.github/actions/setup-ci
+    - name: Security
+      run: |
+        ci_exit_code=0
+        python scripts/update_locks.py --check || ci_exit_code=1
+        python scripts/audit_dependencies.py requirements/ci-tools.lock requirements/cpu.lock requirements/gpu.lock || ci_exit_code=1
+        bandit -r . --exclude '*/test_*.py,*/conftest.py,*/tests/*,*/.venv/*,*/venv/*,*/reports/*,*/.git/*' --severity-level medium --confidence-level medium -f json -o reports/bandit.json || ci_exit_code=1
+        exit "$ci_exit_code"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: security-${{ github.run_attempt }}
+        path: reports/
+        retention-days: 14
+  unit:
+    needs: security
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-          cache: pip
-          cache-dependency-path: requirements.txt
-
-      - name: Install CPU-only torch at the pinned versions
-        # The default PyPI build of torch bundles CUDA libraries (several GB) that
-        # a CPU runner can't use; the pins themselves come from requirements.txt.
-        run: |
-          python -m pip install --upgrade pip
-          pip install $(grep -E '^(torch|torchvision)==' requirements.txt) \
-            --index-url https://download.pytorch.org/whl/cpu
-
-      - name: Install the rest of requirements.txt
-        run: pip install -r requirements.txt
-
-      - name: Cache Hugging Face downloads (datasets, tokenizer, configs)
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/huggingface
-          key: hf-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
-          restore-keys: hf-${{ runner.os }}-
-
-      - name: Run CPU tests
-        # The whole repo, so new test folders (Phase 2 onwards) are covered too
-        run: python -m pytest -m "not gpu" -v --tb=short
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.event.pull_request.head.sha || github.sha }}
+        persist-credentials: false
+    - uses: ./.github/actions/setup-ci
+    - run: python -m pip install --require-hashes --extra-index-url https://download.pytorch.org/whl/cpu -r requirements/cpu.lock
+    - run: python -m pip check
+    - run: python scripts/run_tests.py unit
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: unit-${{ github.run_attempt }}
+        path: reports/
+        retention-days: 14
+  integration:
+    needs: unit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.event.pull_request.head.sha || github.sha }}
+        persist-credentials: false
+    - uses: ./.github/actions/setup-ci
+    - run: python -m pip install --require-hashes --extra-index-url https://download.pytorch.org/whl/cpu -r requirements/cpu.lock
+    - run: python -m pip check
+    - run: python scripts/run_tests.py integration
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: integration-${{ github.run_attempt }}
+        path: reports/
+        retention-days: 14
+  e2e:
+    needs: integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.event.pull_request.head.sha || github.sha }}
+        persist-credentials: false
+    - uses: ./.github/actions/setup-ci
+    - run: python -m pip install --require-hashes --extra-index-url https://download.pytorch.org/whl/cpu -r requirements/cpu.lock
+    - run: python -m pip check
+    - run: python scripts/run_tests.py e2e
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      if: always()
+      with:
+        name: e2e-${{ github.run_attempt }}
+        path: reports/
+        retention-days: 14
+  cpu-tests:
+    name: cpu-tests
+    needs:
+    - formatting
+    - lint
+    - security
+    - unit
+    - integration
+    - e2e
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+    - name: Fail unless every required stage succeeded
+      env:
+        RESULTS: ${{ toJSON(needs) }}
+      run: |
+        python3 - <<'CHECK'
+        import json, os
+        results = json.loads(os.environ['RESULTS'])
+        failed = {name: job['result'] for name, job in results.items() if job['result'] != 'success'}
+        if failed:
+            raise SystemExit(f'Required stages did not pass: {failed}')
+        print('All required CI stages passed')
+        CHECK

@@ -1,5 +1,1 @@
-pytest
-black
-ruff
-mypy
-ipython
+-r requirements/ci-tools.lock

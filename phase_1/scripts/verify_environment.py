@@ -6,10 +6,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-
 REQUIRED_PACKAGES = [
-    ("torch", "2.14.0"),
-    ("transformers", "5.17.0"),
+    ("torch", "2.15.0"),
+    ("transformers", "5.23.0"),
     ("datasets", "5.0.1"),
     ("pyarrow", "25.0.1"),
     ("tqdm", "4.70.1"),
@@ -36,7 +35,7 @@ def check_dependencies() -> list[str]:
     for package, expected_version in REQUIRED_PACKAGES:
         try:
             module = __import__(package)
-            actual_version = getattr(module, "__version__", None)
+            actual_version = getattr(module, "__version__", "").split("+")[0]
             if actual_version is None:
                 missing.append(f"{package} ({expected_version} required)")
             elif actual_version != expected_version:
@@ -48,7 +47,9 @@ def check_dependencies() -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate Phase 1 Python environment setup.")
-    parser.add_argument("--create-dirs", action="store_true", help="Create the requested directory structure.")
+    parser.add_argument(
+        "--create-dirs", action="store_true", help="Create the requested directory structure."
+    )
     args = parser.parse_args()
 
     if args.create_dirs:

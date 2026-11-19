@@ -1,23 +1,25 @@
 # Phase 2 Detailed Checklist
 
-**Last Updated:** 2026-10-02  
+**Last Updated:** 2026-10-02\
 **Scope:** Granular task breakdown for all 11 Phase 2 GitHub issues
 
----
+______________________________________________________________________
 
 ## #40: Data Loading & Preparation
 
-**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/40  
-**Duration:** 2-3 days  
+**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/40\
+**Duration:** 2-3 days\
 **Status:** Not started
 
 ### Code Setup
+
 - [ ] Create `phase_2/scripts/data_loader.py`
 - [ ] Import dependencies: polars, pandas, pyarrow, logging
 - [ ] Set up logging configuration for data loading operations
 - [ ] Create `RoutingDataLoader` class skeleton
 
 ### Schema Validation
+
 - [ ] Define expected Parquet schema (9 columns) as constant
 - [ ] Implement `validate_schema()` method
   - [ ] Check column names match: sequence_id, token_id, token_str, token_position, layer_index, expert_probs, selected_experts, selected_probs, dataset_source
@@ -27,6 +29,7 @@
 - [ ] Raise informative errors for schema mismatches
 
 ### Data Quality Analysis
+
 - [ ] Implement `quality_report()` method
   - [ ] Count null/missing values per column
   - [ ] Compute value ranges (min/max) for numeric columns
@@ -40,6 +43,7 @@
   - [ ] Recommendations if issues found
 
 ### Summary Statistics
+
 - [ ] Implement `summary_stats()` method
   - [ ] Total row count per dataset
   - [ ] Tokens per layer (mean, min, max)
@@ -51,6 +55,7 @@
 - [ ] Create human-readable stats table for reporting
 
 ### Memory Profiling
+
 - [ ] Implement memory usage tracking during load
   - [ ] Peak RAM usage (using psutil)
   - [ ] Per-dataset memory footprint
@@ -59,6 +64,7 @@
 - [ ] Estimate if dataset fits in standard GPU HBM
 
 ### Unified Loader Interface
+
 - [ ] Implement `load()` method with Polars lazy evaluation
 - [ ] Add filtering methods:
   - [ ] `filter_by_dataset(name: str)` – GSM8K or MBPP
@@ -71,31 +77,35 @@
 - [ ] Add caching to avoid reloading
 
 ### Testing & Documentation
+
 - [ ] Write docstrings for all methods (NumPy style)
 - [ ] Test on sample data (100 rows)
 - [ ] Document data assumptions and edge cases
 - [ ] Add usage examples in module docstring
 
 ### Deliverables
+
 - [ ] `phase_2/scripts/data_loader.py` – Complete implementation
 - [ ] `phase_2/data/data_quality_report.md` – QA report
 - [ ] `phase_2/data/summary_statistics.csv` – Statistics table
 - [ ] `phase_2/data/memory_profile.txt` – Memory usage
 - [ ] Tests pass for schema validation and quality checks
 
----
+______________________________________________________________________
 
 ## #41: Determinism Verification
 
-**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/41  
-**Duration:** 2-3 days  
+**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/41\
+**Duration:** 2-3 days\
 **Depends on:** #40
 
 ### Determinism Analysis Setup
+
 - [ ] Create `phase_2/scripts/determinism.py`
 - [ ] Import scipy.spatial.distance (KL divergence), numpy, pandas
 
 ### Sampling Strategy
+
 - [ ] Implement `stratified_sample(loader, sample_size=200)`
   - [ ] Stratify by: dataset (GSM8K/MBPP), token_position (early/mid/late), layer
   - [ ] Ensure representative coverage across dimensions
@@ -104,6 +114,7 @@
 - [ ] Get probability distributions for same 5 prompts across all runs
 
 ### Deviation Computation
+
 - [ ] For each sampled prompt, compute max deviation across 5 runs
   - [ ] Per token: max|P_run1 - P_run2| ... max|P_run1 - P_run5|
   - [ ] Per layer: aggregate deviation per layer
@@ -116,12 +127,14 @@
 - [ ] Document which metric used in final report
 
 ### Pass/Fail Criteria
-- [ ] Define thresholds for pass criterion (default: <1e-6 max deviation)
+
+- [ ] Define thresholds for pass criterion (default: \<1e-6 max deviation)
 - [ ] Implement `pass_fail_determination(max_dev, threshold)`
 - [ ] Handle edge cases (missing data, NaN values)
 - [ ] Log reasoning if fails
 
 ### Statistical Summary
+
 - [ ] Compute statistics by layer:
   - [ ] Mean, median, std, min, max deviation
   - [ ] Per-layer pass/fail status
@@ -132,12 +145,14 @@
 - [ ] Export: `determinism_statistics.csv`
 
 ### Visualization
+
 - [ ] Create plot: max deviation per layer
 - [ ] Create plot: max deviation per expert (top-20)
 - [ ] Create boxplot: deviation distribution per layer
 - [ ] Export as PNG
 
 ### Report Generation
+
 - [ ] Write `determinism_verification.md` report with:
   - [ ] Executive summary (pass/fail)
   - [ ] Methodology (sampling, metrics, thresholds)
@@ -147,31 +162,35 @@
   - [ ] Recommendations (e.g., "safe to proceed to Phase 3")
 
 ### Testing & Documentation
+
 - [ ] Unit tests for deviation computation
 - [ ] Test on toy dataset (10 prompts, 2 runs)
 - [ ] Document any non-determinism findings
 - [ ] Add edge case handling (missing runs, NaN values)
 
 ### Deliverables
+
 - [ ] `phase_2/scripts/determinism.py` – Complete implementation
 - [ ] `phase_2/reports/determinism_verification.md` – Report
 - [ ] `phase_2/data/determinism_statistics.csv` – Statistics
 - [ ] PNG plots (deviation per layer, per expert)
 
----
+______________________________________________________________________
 
 ## #42: Baseline Distributions Analysis
 
-**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/42  
-**Duration:** 3-4 days  
+**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/42\
+**Duration:** 3-4 days\
 **Depends on:** #40
 **Blocks:** #43, #45, #46, #47
 
 ### Distribution Computation Setup
+
 - [ ] Create `phase_2/scripts/baseline_distributions.py`
 - [ ] Import numpy, scipy.stats, polars, pandas
 
 ### Per-Layer, Per-Domain Aggregation
+
 - [ ] Implement `compute_distributions(loader, by_layer=True, by_domain=True)`
 - [ ] For each (layer, domain) pair:
   - [ ] Collect all expert probabilities from matching rows
@@ -181,6 +200,7 @@
   - [ ] Track number of observations (sample size)
 
 ### Token-level Averaging
+
 - [ ] Implement token averaging for repeated tokens:
   - [ ] For each unique (token_id, layer_index) pair:
     - [ ] Collect all probability distributions
@@ -190,8 +210,10 @@
 - [ ] Export token-level averages separately
 
 ### Data Organization
+
 - [ ] Organize results as nested dict:
-  ```
+
+  ```text
   distributions[layer_idx][dataset_name] = {
     'mean': array([num_experts]),
     'median': array([num_experts]),
@@ -205,10 +227,13 @@
     'n_samples': int,
   }
   ```
+
 - [ ] Save to JSON: `baseline_distributions.json` (human-readable)
+
 - [ ] Save to Parquet (optional, for future analysis)
 
 ### Distribution Comparison Tables
+
 - [ ] Generate side-by-side comparison tables for each layer:
   - [ ] GSM8K vs MBPP mean probabilities
   - [ ] Difference (MBPP - GSM8K)
@@ -218,6 +243,7 @@
   - [ ] Sort by absolute difference (highest divergence first)
 
 ### Layer-wise Aggregate Statistics
+
 - [ ] For each layer, compute:
   - [ ] Overall mean probability (uniform would be 1/num_experts)
   - [ ] Probability distribution skewness (are some experts heavily used?)
@@ -226,12 +252,14 @@
   - [ ] Columns: layer_idx, mean_prob_gsm8k, mean_prob_mbpp, skewness_gsm8k, skewness_mbpp, ...
 
 ### Validation Checks
+
 - [ ] Verify all probabilities are in [0, 1]
 - [ ] Verify expert probabilities sum to 1.0 per token (within 1e-5)
 - [ ] Check for NaN/inf values (should be zero)
 - [ ] Log any validation failures
 
 ### Visualization Preparation
+
 - [ ] Generate distribution plots per layer (for later visualization #49):
   - [ ] Histogram: expert probability distribution GSM8K vs MBPP
   - [ ] Density plot: smooth distribution curves
@@ -241,6 +269,7 @@
   - [ ] Late layer (e.g., layer 23): expected to be integrative
 
 ### Testing & Documentation
+
 - [ ] Unit tests:
   - [ ] Verify mean computation correctness
   - [ ] Verify probability sums to 1.0
@@ -250,21 +279,23 @@
 - [ ] Add edge cases (single sample, identical values)
 
 ### Deliverables
+
 - [ ] `phase_2/scripts/baseline_distributions.py` – Complete implementation
 - [ ] `phase_2/data/baseline_distributions.json` – Full statistical results
 - [ ] `phase_2/reports/distributions_by_layer.csv` – Comparison tables
 - [ ] `phase_2/reports/layer_aggregate_statistics.csv` – Summary statistics
 - [ ] Tests pass for statistical correctness
 
----
+______________________________________________________________________
 
 ## #43: Layer-wise Specialization Summaries
 
-**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/43  
-**Duration:** 2-3 days  
+**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/43\
+**Duration:** 2-3 days\
 **Depends on:** #42
 
 ### Top Expert Ranking
+
 - [ ] Create `phase_2/scripts/layer_summaries.py`
 - [ ] For each layer and domain:
   - [ ] Rank experts by mean probability (highest to lowest)
@@ -275,6 +306,7 @@
   - [ ] Columns: layer_idx, rank, expert_id, mean_prob_gsm8k, mean_prob_mbpp
 
 ### Expert Utilization Analysis
+
 - [ ] Define utilization threshold (e.g., mean probability > 0.001)
 - [ ] For each layer and domain:
   - [ ] Count experts above threshold (active experts)
@@ -284,7 +316,8 @@
   - [ ] Columns: layer_idx, utilization_gsm8k, utilization_mbpp, dead_experts_count
 
 ### Shannon Entropy Computation
-- [ ] Implement entropy calculation: $H = -\sum p_i \log(p_i)$
+
+- [ ] Implement entropy calculation: $H = -\\sum p_i \\log(p_i)$
   - [ ] Use natural log (ln)
   - [ ] Handle p_i = 0 gracefully (0 * log(0) → 0)
 - [ ] For each layer and domain:
@@ -297,6 +330,7 @@
   - [ ] Columns: layer_idx, entropy_gsm8k, entropy_mbpp, entropy_diff
 
 ### Comparison Tables
+
 - [ ] Generate comparison tables (GSM8K vs MBPP) for each layer
 - [ ] Highlight layers with largest divergence in:
   - [ ] Expert utilization
@@ -305,6 +339,7 @@
 - [ ] Export comprehensive summaries: `layer_profiles.csv`
 
 ### Per-Dataset Specialization Profiles
+
 - [ ] Create layer profiles for GSM8K:
   - [ ] Layer type (early/general, mid/specialized, late/integration)
   - [ ] Top 5 active experts
@@ -314,41 +349,46 @@
 - [ ] Compare and note differences
 
 ### Visualization Prep
+
 - [ ] Identify plots for later visualization:
   - [ ] Entropy comparison: GSM8K vs MBPP by layer
   - [ ] Expert utilization by layer
   - [ ] Top-expert consistency heatmap
 
 ### Statistical Anomalies
+
 - [ ] Identify outliers:
   - [ ] Layers with very high/low entropy
-  - [ ] Layers with expert utilization <20% or >80%
+  - [ ] Layers with expert utilization \<20% or >80%
   - [ ] Layers with many dead experts
 - [ ] Document anomalies and possible explanations
 
 ### Testing & Documentation
+
 - [ ] Unit tests for entropy calculation
 - [ ] Verify utilization rate is in [0, 1]
 - [ ] Test edge cases (all experts equally used, one expert only)
 - [ ] Document entropy interpretation
 
 ### Deliverables
+
 - [ ] `phase_2/scripts/layer_summaries.py` – Implementation
 - [ ] `phase_2/data/layer_summaries.json` – Complete layer profiles
 - [ ] `phase_2/reports/layer_profiles.csv` – Human-readable summaries
 - [ ] `phase_2/reports/entropy_analysis.csv` – Entropy statistics
 - [ ] `phase_2/reports/top_experts_by_layer.csv` – Expert rankings
 
----
+______________________________________________________________________
 
 ## #44: Shared Token Identification
 
-**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/44  
-**Duration:** 1-2 days  
+**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/44\
+**Duration:** 1-2 days\
 **Depends on:** #40
 **Blocks:** #45
 
 ### Vocabulary Overlap Computation
+
 - [ ] Create `phase_2/scripts/token_analysis.py`
 - [ ] Extract unique token_id values from each dataset
   - [ ] GSM8K vocabulary
@@ -362,6 +402,7 @@
 - [ ] Log vocabulary sizes and overlap details
 
 ### Shared Token Inventory
+
 - [ ] For each shared token:
   - [ ] Store token_id, token_str
   - [ ] Count occurrences in GSM8K
@@ -376,6 +417,7 @@
   - [ ] Columns: token_id, token_str, count_gsm8k, count_mbpp, total_count, frequency_rank_gsm8k, frequency_rank_mbpp, classification
 
 ### Stratified Sampling
+
 - [ ] Stratify shared tokens by frequency:
   - [ ] High frequency (top 20%): most common tokens
   - [ ] Medium frequency (middle 60%): moderate frequency
@@ -384,6 +426,7 @@
 - [ ] Document stratification ratios in report
 
 ### Token Quality Checks
+
 - [ ] Identify special tokens:
   - [ ] Whitespace/punctuation (if tokenizer includes these)
   - [ ] Rare/OOV tokens
@@ -392,6 +435,7 @@
 - [ ] Document any token exclusions
 
 ### Vocabulary Statistics
+
 - [ ] Generate comprehensive vocabulary report:
   - [ ] GSM8K vocab size, unique tokens
   - [ ] MBPP vocab size, unique tokens
@@ -402,12 +446,14 @@
 - [ ] Export: `vocabulary_statistics.txt` or Markdown
 
 ### Visualization Prep
+
 - [ ] Prepare data for token frequency plots (later visualization):
   - [ ] Frequency distribution: shared tokens ranked by count
   - [ ] Scatter plot: frequency in GSM8K vs MBPP
   - [ ] Venn diagram data: overlap visualization
 
 ### Testing & Documentation
+
 - [ ] Unit tests:
   - [ ] Verify intersection correctness
   - [ ] Verify frequency counts match Parquet data
@@ -416,21 +462,23 @@
 - [ ] Document token ID mapping (if any tokenizer changes needed)
 
 ### Deliverables
+
 - [ ] `phase_2/scripts/token_analysis.py` – Implementation (part 1)
 - [ ] `phase_2/data/shared_tokens.csv` – Shared token inventory
 - [ ] `phase_2/reports/token_overlap_analysis.md` – Vocabulary analysis report
 - [ ] `phase_2/reports/vocabulary_statistics.txt` – Statistics summary
 
----
+______________________________________________________________________
 
 ## #45: Cross-Domain Token Divergence Analysis
 
-**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/45  
-**Duration:** 3 days  
+**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/45\
+**Duration:** 3 days\
 **Depends on:** #44, #42
 **Blocks:** None (feeds into final analysis)
 
 ### KL Divergence Computation
+
 - [ ] Extend `phase_2/scripts/token_analysis.py` (part 2)
 - [ ] For each shared token and layer:
   - [ ] Extract probability distribution from GSM8K data
@@ -441,6 +489,7 @@
 - [ ] Store results: `token_divergence_per_layer`
 
 ### Token-level Divergence Aggregation
+
 - [ ] For each shared token, aggregate KL divergence across layers:
   - [ ] Mean KL divergence across layers
   - [ ] Max KL divergence (which layer most divergent?)
@@ -453,6 +502,7 @@
   - [ ] Columns: token_id, token_str, mean_kl, max_kl, max_kl_layer, specialization_score, specialization_type
 
 ### Token Ranking
+
 - [ ] Rank shared tokens by KL divergence (highest to lowest)
 - [ ] Identify:
   - [ ] Top 20 most domain-specific tokens (high KL)
@@ -461,6 +511,7 @@
 - [ ] Create ranking tables: `token_divergence_rankings.csv`
 
 ### Per-Layer Token Analysis
+
 - [ ] For each layer, identify:
   - [ ] Which shared tokens have highest divergence?
   - [ ] Are certain tokens consistently specialized across layers?
@@ -468,6 +519,7 @@
 - [ ] Create layer-wise rankings: `token_divergence_by_layer.csv`
 
 ### Semantic Analysis (Optional)
+
 - [ ] Manually inspect tokens with high divergence:
   - [ ] Are they domain-specific tokens (e.g., "def" for code, "number" for math)?
   - [ ] Are they common tokens with context-dependent routing?
@@ -475,18 +527,21 @@
 - [ ] Document findings in analysis report
 
 ### Validation Checks
+
 - [ ] Verify all KL divergences are non-negative (should be ≥ 0)
 - [ ] Check for NaN/inf values (handle edge cases)
 - [ ] Verify probability sums before KL computation
 - [ ] Log any computational issues
 
 ### Visualization Prep
+
 - [ ] Prepare data for:
   - [ ] Scatter plot: KL divergence vs token frequency
   - [ ] Bar chart: top 20 most/least divergent tokens
   - [ ] Heatmap: token × layer KL divergence
 
 ### Statistical Summary
+
 - [ ] Compute aggregate statistics:
   - [ ] Mean KL across all shared tokens
   - [ ] Median, std, min, max KL
@@ -494,6 +549,7 @@
 - [ ] Generate summary report: `token_divergence_summary.txt`
 
 ### Testing & Documentation
+
 - [ ] Unit tests:
   - [ ] Verify KL computation correctness (vs. scipy.spatial.distance.entropy)
   - [ ] Edge case: identical distributions (KL = 0)
@@ -502,22 +558,24 @@
 - [ ] Document KL divergence interpretation for non-technical readers
 
 ### Deliverables
+
 - [ ] `phase_2/scripts/token_analysis.py` – Complete (part 2)
 - [ ] `phase_2/data/token_divergence.csv` – Full divergence results
 - [ ] `phase_2/reports/cross_domain_token_analysis.md` – Analysis report
 - [ ] `phase_2/reports/token_divergence_rankings.csv` – Token rankings
 - [ ] `phase_2/reports/token_divergence_by_layer.csv` – Per-layer analysis
 
----
+______________________________________________________________________
 
 ## #46: Jensen-Shannon Divergence Computation
 
-**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/46  
-**Duration:** 3-4 days  
+**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/46\
+**Duration:** 3-4 days\
 **Depends on:** #42
 **Blocks:** #48
 
 ### Global JSD Computation
+
 - [ ] Create `phase_2/scripts/jsd_analysis.py`
 - [ ] Compute domain-averaged expert probability distribution:
   - [ ] Average all expert probabilities from GSM8K across all tokens/layers
@@ -530,6 +588,7 @@
 - [ ] Interpretation: global domain difference in routing
 
 ### Per-Layer JSD Computation
+
 - [ ] For each layer independently:
   - [ ] Compute domain-averaged distribution for that layer only
   - [ ] Average across all tokens in that layer (per domain)
@@ -539,6 +598,7 @@
 - [ ] Identify which layers have lowest JSD (most general)
 
 ### Bootstrap Confidence Intervals
+
 - [ ] Implement bootstrap resampling (n=1000):
   - [ ] For each bootstrap iteration:
     - [ ] Resample tokens with replacement (per layer, per domain)
@@ -551,6 +611,7 @@
   - [ ] Columns: layer_idx, jsd_mean, ci_lower_95, ci_upper_95
 
 ### Per-Expert JSD Computation
+
 - [ ] For each expert across all layers:
   - [ ] Extract activation pattern: prob distribution across layers × domains
   - [ ] Compute JSD(GSM8K || MBPP) for this expert's activation pattern
@@ -562,6 +623,7 @@
   - [ ] Columns: expert_id, jsd_value, specialization_type
 
 ### Statistical Significance Testing
+
 - [ ] For each per-layer JSD, compute p-value:
   - [ ] Null hypothesis: JSD = 0 (no domain difference)
   - [ ] Alternative: JSD > 0 (significant difference)
@@ -573,6 +635,7 @@
   - [ ] Columns: layer_idx, jsd_value, p_value, significant (yes/no), ci_lower, ci_upper
 
 ### Interpretation & Classification
+
 - [ ] Classify layers by JSD magnitude:
   - [ ] Highly specialized: JSD > 0.15
   - [ ] Moderately specialized: JSD 0.05-0.15
@@ -581,19 +644,23 @@
 - [ ] Identify candidate layers for Phase 3 predictor focus
 
 ### Validation Checks
+
 - [ ] Verify JSD is symmetric (or document if using asymmetric KL)
 - [ ] Verify JSD values are in [0, log(2)] for uniform distributions
 - [ ] Check for NaN/inf (handle edge cases)
 - [ ] Log all computational details for reproducibility
 
 ### Visualization Prep
+
 - [ ] Prepare data for:
   - [ ] Line plot: JSD by layer with confidence intervals
   - [ ] Heatmap: expert × layer JSD values
   - [ ] Bar chart: top 20 most/least specialized experts
 
 ### Results Export
+
 - [ ] JSON summary: `jsd_analysis.json`
+
   ```json
   {
     "global_jsd": 0.125,
@@ -604,9 +671,11 @@
     "methodology": "..."
   }
   ```
+
 - [ ] CSV results: `jsd_significance.csv`, `jsd_per_expert.csv`
 
 ### Documentation & Report
+
 - [ ] Write detailed methodology section:
   - [ ] JSD formula
   - [ ] Bootstrap procedure
@@ -617,6 +686,7 @@
   - [ ] Statistical confidence in findings
 
 ### Testing & Documentation
+
 - [ ] Unit tests:
   - [ ] Verify JSD formula correctness (vs. scipy)
   - [ ] Verify bootstrap produces reasonable distributions
@@ -626,21 +696,23 @@
 - [ ] Document all assumptions and limitations
 
 ### Deliverables
+
 - [ ] `phase_2/scripts/jsd_analysis.py` – Complete implementation
 - [ ] `phase_2/data/jsd_analysis.json` – Full JSD results
 - [ ] `phase_2/reports/jsd_significance.csv` – Statistical results
 - [ ] `phase_2/reports/jsd_per_expert.csv` – Expert rankings
 - [ ] `phase_2/reports/jsd_findings.md` – Interpretation and findings
 
----
+______________________________________________________________________
 
 ## #47: Expert-level Divergence & Specialization
 
-**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/47  
-**Duration:** 2-3 days  
+**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/47\
+**Duration:** 2-3 days\
 **Depends on:** #42
 
 ### Expert Activation Analysis
+
 - [ ] Create `phase_2/scripts/expert_profiling.py`
 - [ ] For each expert:
   - [ ] Count how many tokens activate this expert as top-2 (GSM8K)
@@ -651,6 +723,7 @@
   - [ ] Columns: expert_id, activation_freq_gsm8k, activation_freq_mbpp, ratio
 
 ### Expert Probability Profile
+
 - [ ] For each expert, compute across all layers:
   - [ ] Mean probability in GSM8K (average over all occurrences)
   - [ ] Mean probability in MBPP
@@ -660,6 +733,7 @@
 - [ ] Store as: `expert_prob_profiles.csv`
 
 ### Cross-Domain Divergence Per Expert
+
 - [ ] For each expert:
   - [ ] Extract probability distribution across layers (GSM8K)
   - [ ] Extract probability distribution across layers (MBPP)
@@ -669,6 +743,7 @@
   - [ ] Columns: expert_id, jsd_value, specialization_score
 
 ### Expert Classification
+
 - [ ] Classify each expert:
   - [ ] Universal: low divergence, activated in both domains
   - [ ] Math-specific: high divergence, more active in GSM8K
@@ -678,6 +753,7 @@
   - [ ] Columns: expert_id, classification, justification, jsd_value, activation_freq
 
 ### Expert Clustering
+
 - [ ] Perform k-means clustering on expert profiles:
   - [ ] Features: [activation_freq_gsm8k, activation_freq_mbpp, jsd_value, mean_prob]
   - [ ] Normalize features to [0, 1]
@@ -692,6 +768,7 @@
   - [ ] Columns: expert_id, cluster_id, cluster_name
 
 ### Expert Patterns
+
 - [ ] Analyze patterns within clusters:
   - [ ] Average characteristics per cluster
   - [ ] Layer distribution per cluster (do certain clusters activate certain layers?)
@@ -699,6 +776,7 @@
 - [ ] Document findings: `expert_clustering_report.md`
 
 ### Top/Bottom Experts Ranking
+
 - [ ] Rank experts by different criteria:
   - [ ] By activation frequency (most/least active)
   - [ ] By specialization (most/least domain-specific)
@@ -706,12 +784,14 @@
 - [ ] Create ranking tables for reporting
 
 ### Validation & Quality Checks
+
 - [ ] Verify all experts are represented (no missing experts)
 - [ ] Check for NaN/inf in profiles
 - [ ] Verify clustering assignments are sensible
 - [ ] Log any computational issues
 
 ### Visualization Prep
+
 - [ ] Prepare data for:
   - [ ] Scatter plot: activation frequency vs JSD (2D embedding of experts)
   - [ ] Bubble chart: add cluster size as bubble size
@@ -719,12 +799,14 @@
   - [ ] Radar chart: expert profile (multi-dimensional)
 
 ### Integration with Other Analyses
+
 - [ ] Link expert profiles to:
   - [ ] Shared token analysis (#45): which experts activate on domain-specific tokens?
   - [ ] Layer specialization (#48): which experts are in specialized layers?
 - [ ] Document interdependencies
 
 ### Testing & Documentation
+
 - [ ] Unit tests:
   - [ ] Verify activation frequency computation
   - [ ] Verify clustering produces valid partitions
@@ -733,21 +815,23 @@
 - [ ] Document expert numbering (make sure IDs match Parquet)
 
 ### Deliverables
+
 - [ ] `phase_2/scripts/expert_profiling.py` – Complete implementation
 - [ ] `phase_2/data/expert_profiles.csv` – Comprehensive expert data
 - [ ] `phase_2/data/expert_clustering.csv` – Cluster assignments
 - [ ] `phase_2/reports/expert_specialization.md` – Full analysis report
 - [ ] `phase_2/reports/expert_classification.csv` – Classification results
 
----
+______________________________________________________________________
 
 ## #48: Layer Specialization Indexing
 
-**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/48  
-**Duration:** 2-3 days  
+**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/48\
+**Duration:** 2-3 days\
 **Depends on:** #41 (Determinism), #46 (JSD)
 
 ### Specialization Index Computation
+
 - [ ] Create `phase_2/scripts/layer_specialization.py`
 - [ ] Compute index for each layer:
   - [ ] Component 1 (JSD-based): Use per-layer JSD from #46 (weight: 0.5)
@@ -755,12 +839,13 @@
   - [ ] Component 3 (top-expert consistency): Jaccard similarity of top-5 experts between domains (weight: 0.25)
     - [ ] High consistency (Jaccard ≈ 1) → low contribution to specialization
     - [ ] Low consistency (Jaccard < 0.5) → high contribution to specialization
-- [ ] Formula: $I_{spec}(l) = 0.5 \cdot JSD + 0.25 \cdot |util_{gsm8k} - util_{mbpp}| + 0.25 \cdot (1 - Jaccard)$
+- [ ] Formula: $I\_{spec}(l) = 0.5 \\cdot JSD + 0.25 \\cdot |util\_{gsm8k} - util\_{mbpp}| + 0.25 \\cdot (1 - Jaccard)$
 - [ ] Normalize to [0, 100] scale for interpretation
 - [ ] Export: `layer_specialization_index.csv`
   - [ ] Columns: layer_idx, specialization_index, component_jsd, component_utilization, component_consistency
 
 ### Layer Classification
+
 - [ ] Classify layers into categories:
   - [ ] Early layers (0-7): General linguistic processing (low specialization expected)
   - [ ] Mid layers (8-19): Domain-specific expert allocation (high specialization expected)
@@ -773,6 +858,7 @@
   - [ ] Columns: layer_idx, specialization_index, classification, confidence
 
 ### Layer Grouping
+
 - [ ] Group layers with similar specialization patterns:
   - [ ] Cluster 1: Highly general layers
   - [ ] Cluster 2: Moderately specialized layers
@@ -781,6 +867,7 @@
 - [ ] Document groupings: `layer_grouping_analysis.md`
 
 ### Anomaly Detection
+
 - [ ] Identify layers with unexpected specialization:
   - [ ] Early layer with high specialization (unusual)
   - [ ] Mid layer with low specialization (unusual)
@@ -791,6 +878,7 @@
 - [ ] Export anomaly report: `layer_anomalies.md`
 
 ### Phase 3 Recommendations
+
 - [ ] Based on layer specialization, recommend which layers to focus on for Phase 3 predictor training:
   - [ ] High specialization layers: ROI for predictor likely higher
   - [ ] Low specialization layers: routing may be too complex to predict
@@ -800,6 +888,7 @@
   - [ ] Columns: layer_idx, specialization_index, recommended_priority, reasoning
 
 ### Cross-Model Comparison (if DeepSeek available)
+
 - [ ] If DeepSeek Phase 1 data available:
   - [ ] Compute specialization index for DeepSeek
   - [ ] Compare layer-wise specialization patterns with Qwen
@@ -808,6 +897,7 @@
 - [ ] Create comparison table: `qwen_vs_deepseek_specialization.csv`
 
 ### Visualization Prep
+
 - [ ] Prepare data for:
   - [ ] Line plot: specialization index by layer with classification colors
   - [ ] Stacked bar chart: components of specialization index by layer
@@ -815,6 +905,7 @@
   - [ ] Scatter plot: model comparison (Qwen vs DeepSeek if available)
 
 ### Report Generation
+
 - [ ] Create comprehensive report: `layer_classification.md`
   - [ ] Executive summary: key findings
   - [ ] Methods: specialization index formula, classification logic
@@ -824,6 +915,7 @@
   - [ ] Appendices: detailed tables, formulas
 
 ### Validation & Quality Checks
+
 - [ ] Verify specialization index is in [0, 100]
 - [ ] Check for NaN/inf values
 - [ ] Verify classification makes intuitive sense
@@ -831,6 +923,7 @@
 - [ ] Log all computational steps
 
 ### Testing & Documentation
+
 - [ ] Unit tests:
   - [ ] Verify index computation correctness
   - [ ] Verify classification logic
@@ -840,6 +933,7 @@
 - [ ] Document formula and rationale for weights
 
 ### Deliverables
+
 - [ ] `phase_2/scripts/layer_specialization.py` – Complete implementation
 - [ ] `phase_2/reports/layer_specialization_index.csv` – Index scores
 - [ ] `phase_2/reports/layer_classification.csv` – Classification results
@@ -847,15 +941,16 @@
 - [ ] `phase_2/reports/phase_3_layer_recommendations.csv` – Recommendations
 - [ ] `phase_2/reports/layer_anomalies.md` – Anomaly analysis (if any)
 
----
+______________________________________________________________________
 
 ## #49: Visualizations & Chart Publishing
 
-**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/49  
-**Duration:** 3-4 days  
+**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/49\
+**Duration:** 3-4 days\
 **Depends on:** All prior analyses (#41-48)
 
 ### Visualization Setup
+
 - [ ] Create `phase_2/scripts/visualization.py`
 - [ ] Import: matplotlib, seaborn, plotly
 - [ ] Set up consistent style:
@@ -866,6 +961,7 @@
 - [ ] Create helper functions for consistent formatting
 
 ### Distribution Plots (3+ figures)
+
 - [ ] **Figure 1: Distribution Comparison (Selected Layers)**
   - [ ] Show GSM8K vs MBPP probability distributions for 3 layers (early, mid, late)
   - [ ] Format: histogram or density plot, overlaid
@@ -885,6 +981,7 @@
   - [ ] Export: PNG, SVG
 
 ### Divergence & Specialization Plots (4+ figures)
+
 - [ ] **Figure 4: Per-Layer JSD with Confidence Intervals**
   - [ ] X-axis: layer index
   - [ ] Y-axis: JSD value
@@ -912,6 +1009,7 @@
   - [ ] Export: PNG, SVG
 
 ### Token Analysis Plots (3+ figures)
+
 - [ ] **Figure 8: Shared Token Divergence Scatter**
   - [ ] X-axis: token frequency
   - [ ] Y-axis: KL divergence
@@ -931,6 +1029,7 @@
   - [ ] Export: PNG, SVG
 
 ### Expert Analysis Plots (2+ figures)
+
 - [ ] **Figure 11: Expert Clustering Scatter (2D Projection)**
   - [ ] X-axis: activation frequency (average across domains)
   - [ ] Y-axis: JSD divergence
@@ -946,6 +1045,7 @@
   - [ ] Export: PNG, SVG
 
 ### Composite/Summary Figures (2+ figures)
+
 - [ ] **Figure 13: Layer Specialization Landscape**
   - [ ] 3-panel figure:
     - [ ] Panel A: Specialization index by layer (line plot with zones)
@@ -961,6 +1061,7 @@
   - [ ] Export: PNG
 
 ### Interactive Dashboard
+
 - [ ] Create HTML dashboard with plotly:
   - [ ] Tab 1: Distribution analysis
     - [ ] Dropdown: select layer to visualize
@@ -988,6 +1089,7 @@
 - [ ] Test: verify all plots interactive and responsive
 
 ### Figure Quality & Consistency
+
 - [ ] All figures use consistent color scheme:
   - [ ] GSM8K: blue (or designated color)
   - [ ] MBPP: orange/red (or designated color)
@@ -1003,8 +1105,10 @@
 - [ ] Colorblind-accessible palette (test with simulator)
 
 ### Export & Archiving
+
 - [ ] Create directory structure:
-  ```
+
+  ```text
   phase_2/reports/figures/
   ├── distribution_comparison_layer_*.png
   ├── expert_activation_heatmap_gsm8k.png
@@ -1024,13 +1128,17 @@
   ├── *_vector.svg (vector versions)
   └── README.txt (figure descriptions)
   ```
+
 - [ ] Batch convert PNG to PDF (if needed for print)
+
 - [ ] Generate figure index: `figures_README.md`
+
   - [ ] List of all figures
   - [ ] Captions and descriptions
   - [ ] Which section of report each figure appears in
 
 ### Visualization Testing & Validation
+
 - [ ] Check all figures render correctly (no missing data)
 - [ ] Verify color palettes are accessible (colorblind-friendly)
 - [ ] Proofread all labels, titles, captions
@@ -1040,6 +1148,7 @@
 - [ ] Test dashboard on mobile (ensure responsive)
 
 ### Documentation
+
 - [ ] Document visualization code:
   - [ ] High-level functions for each figure type
   - [ ] Parameters and customization options
@@ -1052,21 +1161,23 @@
   - [ ] Expected output sizes and quality
 
 ### Deliverables
+
 - [ ] `phase_2/scripts/visualization.py` – Complete implementation
 - [ ] `phase_2/reports/figures/` (12+ PNG/SVG figures, high quality)
 - [ ] `phase_2/reports/dashboard.html` – Interactive dashboard
 - [ ] `phase_2/reports/figures_README.md` – Figure index and captions
 - [ ] `visualization_reproducibility.md` – How to regenerate plots
 
----
+______________________________________________________________________
 
 ## #50: Comprehensive Report & Documentation
 
-**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/50  
-**Duration:** 2-3 days  
+**Issue:** https://github.com/scerruti/moe-expert-prefetching/issues/50\
+**Duration:** 2-3 days\
 **Depends on:** #49 (Visualizations)
 
 ### Report Structure & Outline
+
 - [ ] Create report skeleton: `phase_2/reports/PHASE_2_ANALYSIS_REPORT.md`
 - [ ] Outline sections:
   - [ ] Title page & metadata
@@ -1080,6 +1191,7 @@
   - [ ] Appendices
 
 ### Executive Summary (1 page max)
+
 - [ ] Key findings (3-5 bullet points):
   - [ ] Global domain divergence (JSD value)
   - [ ] Most specialized layers and experts
@@ -1092,6 +1204,7 @@
   - [ ] Token-level prioritization if any
 
 ### Introduction (2-3 pages)
+
 - [ ] Context: MoE models and expert routing
 - [ ] Motivation: why domain-specific routing matters for prefetching
 - [ ] Research questions:
@@ -1102,6 +1215,7 @@
 - [ ] Contributions of Phase 2 analysis
 
 ### Methods (2 pages)
+
 - [ ] Data sources: Phase 1 Parquet files (GSM8K, MBPP, Qwen1.5-MoE-A2.7B)
 - [ ] Analysis components:
   - [ ] Determinism verification (section referencing #41)
@@ -1119,6 +1233,7 @@
 ### Results Section
 
 #### Determinism Verification (1 page + Figure)
+
 - [ ] Summary: routing is/isn't bitwise deterministic across runs
 - [ ] Key numbers: max deviation, fraction passing criterion
 - [ ] Interpretation: safe to proceed / concerns exist
@@ -1126,6 +1241,7 @@
 - [ ] Reference issue #41
 
 #### Domain Distribution Analysis (2 pages + Figures)
+
 - [ ] Overview: how expert activations differ between GSM8K and MBPP
 - [ ] Layer-wise patterns:
   - [ ] Early layers: mostly general (low JSD)
@@ -1139,6 +1255,7 @@
 - [ ] Reference issues #42, #43, #46, #48
 
 #### Expert Characterization (1.5 pages + Figures)
+
 - [ ] Expert population breakdown:
   - [ ] Universal experts: always active
   - [ ] Domain-specific experts: math-only or code-only
@@ -1154,6 +1271,7 @@
 - [ ] Reference issue #47
 
 #### Shared Token Analysis (1.5 pages + Figures)
+
 - [ ] Vocabulary overlap:
   - [ ] Total shared tokens
   - [ ] Overlap percentage
@@ -1171,6 +1289,7 @@
 - [ ] Reference issues #44, #45
 
 #### Layer Specialization Profile (1.5 pages + Figures)
+
 - [ ] Specialization index overview:
   - [ ] Formula and components
   - [ ] Scale and interpretation
@@ -1185,6 +1304,7 @@
 - [ ] Reference issue #48
 
 #### Cross-Model Insights (if DeepSeek data available)
+
 - [ ] Comparison with DeepSeek-V2-Lite (if available)
   - [ ] Similar specialization patterns?
   - [ ] Differences in layer-wise divergence
@@ -1192,6 +1312,7 @@
 - [ ] If not available: note as future work
 
 ### Discussion (2 pages)
+
 - [ ] Interpretation of findings:
   - [ ] Why do we see these specialization patterns?
   - [ ] What does it mean for expert prefetching?
@@ -1210,6 +1331,7 @@
   - [ ] Potential for hardware optimization
 
 ### Recommendations for Phase 3 (1 page)
+
 - [ ] Layer prioritization:
   - [ ] Top 5 layers to focus on for predictor training (from #48 recommendations)
   - [ ] Layers to skip or deprioritize
@@ -1225,6 +1347,7 @@
   - [ ] Robustness concerns (generalization to new prompts)
 
 ### Appendices (3-5 pages)
+
 - [ ] Appendix A: Detailed statistics tables
   - [ ] Per-layer statistics (mean, std, JSD, specialization index)
   - [ ] Per-expert profiles (top 20 universal, top 20 specialized)
@@ -1245,6 +1368,7 @@
   - [ ] High-resolution versions available
 
 ### Report Formatting & Style
+
 - [ ] Use Markdown formatting for editability
 - [ ] Consistent heading hierarchy
 - [ ] Numbered sections and cross-references
@@ -1256,7 +1380,9 @@
 - [ ] Bold for key terms on first mention
 
 ### PDF Export
+
 - [ ] Use pandoc to convert Markdown → PDF:
+
   ```bash
   pandoc PHASE_2_ANALYSIS_REPORT.md \
     --template eisvogel \
@@ -1264,13 +1390,17 @@
     --to pdf \
     -o PHASE_2_ANALYSIS_REPORT.pdf
   ```
+
 - [ ] Configure pandoc template:
+
   - [ ] Custom title page
   - [ ] Table of contents
   - [ ] Page numbers
   - [ ] Margins and spacing
   - [ ] Figure placement
+
 - [ ] Review PDF for:
+
   - [ ] Correct page breaks
   - [ ] Figure placement and sizing
   - [ ] Table formatting
@@ -1278,6 +1408,7 @@
   - [ ] No orphaned text
 
 ### Documentation Suite
+
 - [ ] Create `phase_2/README.md`:
   - [ ] Overview of Phase 2 analysis
   - [ ] Key findings (bullet list)
@@ -1294,6 +1425,7 @@
   - [ ] Troubleshooting section
 
 ### Integration & Cross-references
+
 - [ ] Link all issues (#40-#49) from report introduction
 - [ ] Reference figures from appropriate sections
 - [ ] Cross-link analysis scripts
@@ -1301,6 +1433,7 @@
 - [ ] Update SYSTEM_DESIGN.md if any changes to planned analysis
 
 ### Quality Assurance
+
 - [ ] Proofread entire report:
   - [ ] Grammar and spelling
   - [ ] Technical accuracy
@@ -1313,6 +1446,7 @@
 - [ ] Ensure consistent notation (what does "e" mean? expert? always explain)
 
 ### Final Review
+
 - [ ] Read report as if unfamiliar with analysis (spot-check understanding)
 - [ ] Verify key takeaways are clear
 - [ ] Confirm recommendations are actionable for Phase 3
@@ -1320,6 +1454,7 @@
 - [ ] Ensure report is publication-ready quality
 
 ### Deliverables
+
 - [ ] `phase_2/reports/PHASE_2_ANALYSIS_REPORT.md` – Main report (Markdown)
 - [ ] `phase_2/reports/PHASE_2_ANALYSIS_REPORT.pdf` – PDF export
 - [ ] `phase_2/README.md` – Directory overview and key findings
@@ -1327,11 +1462,11 @@
 - [ ] `phase_2/figures_README.md` – Figure index and captions (if separate)
 - [ ] All supporting data files and scripts from #40-#49
 
----
+______________________________________________________________________
 
 ## Cross-Component Dependencies & Timing
 
-```
+```text
 Week 1 (Oct 7-13):
 ├─ #40: Data Loading (2-3 days) ← START HERE
 │   ├─ then #41: Determinism (2-3 days, parallel start #42, #44)
@@ -1353,7 +1488,7 @@ Week 4 (Oct 28-Nov 4):
 └─ #50: Final Report (2-3 days) ← depends on #49
 ```
 
----
+______________________________________________________________________
 
 ## Acceptance Criteria Template
 
@@ -1370,7 +1505,6 @@ For each GitHub issue, acceptance criteria should include:
 - [ ] Merged to feature branch
 - [ ] Listed as complete in STATUS.md
 
----
+______________________________________________________________________
 
 **Checklist Status:** ✅ Ready for implementation
-

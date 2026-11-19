@@ -7,6 +7,7 @@ This folder documents the project's intellectual history: conversations with AI 
 ### Dataset & Model Selection
 
 - [**2026-09-10: Gemini – Dataset and Models**](2026-09-10_gemini_dataset_and_models.md)
+
   - Discussion of GSM8K vs. MBPP datasets
   - MoE model options (Mixtral, DeepSeek, Qwen variants)
   - Token budget and randomization strategy
@@ -14,6 +15,7 @@ This folder documents the project's intellectual history: conversations with AI 
   - **Key decision:** Mixtral 8x7B primary target, DeepSeek-V2-Lite for post-MVP scaling
 
 - [**2026-09-10: Dvora – MoE Alternatives for MBPP**](2026-09-10_dvora_moe_alternatives.md)
+
   - MBPP-specific model analysis
   - Code-optimized MoE vs. dense alternatives
   - GSM8K filtering strategies (step count, operators, keywords)
@@ -38,16 +40,16 @@ Supporting materials and background research:
 - [McNair Spatial Reasoning Paper](../references/mcnair_spatial_reasoning.pdf) – Prior work on Qwen3-VL expert routing analysis
 - [Gemini MoE Background](../references/gemini_moe_background.pdf) – LLM conversation notes on MoE fundamentals
 
----
+______________________________________________________________________
 
 ## How to Add New Conversations
 
 1. Create a new markdown file: `YYYY-MM-DD_topic_brief.md`
-2. Include header with date, participants, and topic
-3. Document key decisions, options, and rationale
-4. Link to any supporting references
-5. Update this README with a one-line entry
+1. Include header with date, participants, and topic
+1. Document key decisions, options, and rationale
+1. Link to any supporting references
+1. Update this README with a one-line entry
 
----
+______________________________________________________________________
 
 **Last Updated:** 2026-09-11

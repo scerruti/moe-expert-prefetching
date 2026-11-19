@@ -2,11 +2,11 @@
 
 This document provides a high-level architectural overview for Phase 1 implementation.
 
----
+______________________________________________________________________
 
 ## System Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                    Phase 1 Data Collection                   │
 └─────────────────────────────────────────────────────────────┘
@@ -58,13 +58,13 @@ Input: GSM8K train (7,473) + MBPP all splits (964 examples)
            + Metadata JSON
 ```
 
----
+______________________________________________________________________
 
 ## Data Flow Diagram
 
 ### Per-Prompt Processing
 
-```
+```text
 Prompt Text
     ↓
 [Tokenizer]  →  Token IDs: [101, 2054, 2003, ...]
@@ -101,7 +101,7 @@ Hook Fires at Each MoE Layer:
   → Flush buffer to disk
 ```
 
----
+______________________________________________________________________
 
 ## Hook Architecture
 
@@ -114,9 +114,9 @@ def register_hooks(model):
     for layer_idx, layer in enumerate(model.layers):
         gate = layer.block_sparse_moe.gate  # Module path (Mixtral)
         hook = gate.register_forward_hook(
-            lambda module, input, output, 
-                   layer_id=layer_idx: 
-            capture_routing(module, input, output, layer_id)
+            lambda module, input, output, layer_id=layer_idx: capture_routing(
+                module, input, output, layer_id
+            )
         )
         hooks.append(hook)
     return hooks
@@ -128,42 +128,44 @@ def register_hooks(model):
 def capture_routing(module, input, output, layer_id):
     """
     Called on each forward pass through a MoE router.
-    
+
     Args:
         module: The router gate module
         input: (x,) tuple with input tensor [batch, seq_len, hidden_dim]
         output: Pre-softmax logits [batch, seq_len, num_experts]
         layer_id: Index of this MoE layer (0 to num_layers-1)
-    
+
     Operations:
         1. Softmax over expert dimension
         2. Extract top-k indices
         3. Store to thread-safe buffer (no blocking)
     """
-    x = input[0]                    # [batch, seq_len, hidden_dim]
-    logits = output                 # [batch, seq_len, num_experts]
+    x = input[0]  # [batch, seq_len, hidden_dim]
+    logits = output  # [batch, seq_len, num_experts]
     probs = torch.softmax(logits, dim=-1)  # [batch, seq_len, num_experts]
-    
+
     # Top-k selection
     top_probs, top_indices = torch.topk(probs, k=2, dim=-1)
-    
+
     # Store to global buffer (sequence-id → layer → token → data)
     # No tensor operations; just enqueue to buffer
-    buffer.append({
-        'layer_id': layer_id,
-        'probs': probs.cpu().numpy(),
-        'top_indices': top_indices.cpu().numpy(),
-        'top_probs': top_probs.cpu().numpy(),
-    })
+    buffer.append(
+        {
+            "layer_id": layer_id,
+            "probs": probs.cpu().numpy(),
+            "top_indices": top_indices.cpu().numpy(),
+            "top_probs": top_probs.cpu().numpy(),
+        }
+    )
 ```
 
----
+______________________________________________________________________
 
 ## Storage Schema
 
 ### Parquet Structure (PyArrow)
 
-```
+```text
 Schema (Tab-Separated for Clarity):
 ┌─────────────────┬───────┬──────────────────────────────────┐
 │ Column          │ Type  │ Notes                            │
@@ -193,7 +195,7 @@ Example Row:
 
 ### File Organization
 
-```
+```text
 phase_1/
 ├── docs/                           # This folder
 ├── scripts/                        # Implementation code
@@ -227,13 +229,14 @@ data/
     └─ git_commit: "..."
 ```
 
----
+______________________________________________________________________
 
 ## Key Implementation Details
 
 ### 1. Determinism Under `model.eval()`
 
 During the prefill phase (no generation), expert routing is **bitwise deterministic** if:
+
 - Model is in `eval()` mode (no dropout)
 - Same input → same output every time
 - No stochasticity in routing
@@ -244,7 +247,7 @@ During the prefill phase (no generation), expert routing is **bitwise determinis
 
 For tokens appearing multiple times across the dataset:
 
-```
+```text
 For each unique (token, layer) pair:
   sum_prob[token][layer] += observed_probabilities
   count[token][layer] += 1
@@ -264,7 +267,7 @@ batch_buffer = []
 for prompt in dataset:
     # Process prompt, append rows to batch_buffer
     batch_buffer.extend(extracted_rows)
-    
+
     if len(batch_buffer) >= batch_size:
         write_parquet_batch(batch_buffer)
         batch_buffer = []
@@ -279,45 +282,48 @@ for hook in hooks:
     hook.remove()  # Unregister hook
 ```
 
----
+______________________________________________________________________
 
 ## Validation Checkpoints
 
 ### Determinism Check
+
 - Input: Same 5 prompts
 - Process: Run through model 5 times
 - Output: Table of probabilities per run
 - Pass Criterion: Bitwise identical across all runs
 
 ### Randomization Check
+
 - Input: Full dataset, 2 different random orderings
 - Process: Collect routing for both orderings
 - Output: Comparison of top-k selections
 - Pass Criterion: 100% match for same tokens
 
 ### Data Quality Check
+
 - No NaN/inf values
 - Expert probabilities sum to 1.0 (within epsilon)
 - Top-k indices are valid (0 ≤ idx < 128)
 - No missing sequences
 
----
+______________________________________________________________________
 
 ## Performance Targets
 
-| Metric | Target | Notes |
-|--------|--------|-------|
-| Throughput | 50-100 tokens/sec | Depends on GPU, batch size |
-| Memory (peak) | <80GB | A100 HBM limit |
-| Total runtime | 12-24 hours | For ~8.4k prompts × 5 runs |
-| Determinism | 100% | Zero variance across runs |
+| Metric                 | Target                       | Notes                                                                           |
+| ---------------------- | ---------------------------- | ------------------------------------------------------------------------------- |
+| Throughput             | 50-100 tokens/sec            | Depends on GPU, batch size                                                      |
+| Memory (peak)          | \<80GB                       | A100 HBM limit                                                                  |
+| Total runtime          | 12-24 hours                  | For ~8.4k prompts × 5 runs                                                      |
+| Determinism            | 100%                         | Zero variance across runs                                                       |
 | Data compression ratio | ~1.2-1.3:1 (~20-26 GB total) | Parquet zstd, lossless float32 `expert_probs` kept for Phase 2 (decided in #55) |
 
----
+______________________________________________________________________
 
 ## Error Handling Strategy
 
-```
+```text
 Try:
   ├─ Load dataset
   ├─ Load model
@@ -334,29 +340,33 @@ Try:
     └─ Remove hooks, free GPU memory
 ```
 
----
+______________________________________________________________________
 
 ## Testing Strategy
 
 ### Phase 1a: Unit Tests (Day 1-2)
+
 - [ ] Dataset loader on 10 examples
 - [ ] Model loading and eval mode
 - [ ] Hook registration fires correctly
 - [ ] Parquet schema creation
 
 ### Phase 1b: Integration Test (Day 3-4)
+
 - [ ] Full pipeline on 100 GSM8K + 100 MBPP examples
 - [ ] All outputs generated
 - [ ] Parquet file readable
 - [ ] Validation checks pass
 
 ### Phase 1c: Small-Scale Test (Day 5-6)
+
 - [ ] Full pipeline on 500 examples
 - [ ] Determinism check (same 5 prompts, 5 runs)
 - [ ] Memory usage profiling
 - [ ] Execution time estimation
 
 ### Phase 1d: Full-Scale Validation (Day 7+)
+
 - [ ] All ~8.4k examples, 5 runs
 - [ ] All validation checks pass
 - [ ] Metadata and logging complete

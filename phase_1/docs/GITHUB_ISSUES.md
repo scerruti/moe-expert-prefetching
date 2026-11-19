@@ -1,20 +1,20 @@
 # Phase 1 GitHub Issues & Work Tracking
 
-**Last Updated:** 2026-09-12  
+**Last Updated:** 2026-09-12\
 **Status:** 10 issues created with dependency tracking
 
----
+______________________________________________________________________
 
 ## Quick Navigation
 
-All Phase 1 issues are tracked on GitHub with proper labeling and blocking relationships.  
+All Phase 1 issues are tracked on GitHub with proper labeling and blocking relationships.\
 **View all issues:** https://github.com/scerruti/moe-expert-prefetching/issues
 
----
+______________________________________________________________________
 
 ## Issue Dependency Map
 
-```
+```text
 No Blockers (Can Start Immediately)
 ├── #1: Environment Setup ✅
 │   │
@@ -32,13 +32,14 @@ Sequential Path (Critical Path)
        └─#3─┘
 ```
 
----
+______________________________________________________________________
 
 ## Issues by Priority & Status
 
 ### 🚨 CRITICAL PRIORITY (Blocks Other Work)
 
 #### #1: Environment Setup
+
 - **Status:** Ready to start (no blockers)
 - **Assignee:** [Available]
 - **Estimated Duration:** 1-2 days
@@ -47,6 +48,7 @@ Sequential Path (Critical Path)
 - **Link:** https://github.com/scerruti/moe-expert-prefetching/issues/1
 
 #### #2: Dataset Loading - GSM8K
+
 - **Status:** Blocked by #1
 - **Assignee:** [Available]
 - **Estimated Duration:** 2 days
@@ -55,6 +57,7 @@ Sequential Path (Critical Path)
 - **Link:** https://github.com/scerruti/moe-expert-prefetching/issues/2
 
 #### #3: Dataset Loading - MBPP
+
 - **Status:** Blocked by #1
 - **Assignee:** [Available]
 - **Estimated Duration:** 1-2 days
@@ -63,6 +66,7 @@ Sequential Path (Critical Path)
 - **Link:** https://github.com/scerruti/moe-expert-prefetching/issues/3
 
 #### #4: Model Loading and Setup
+
 - **Status:** Blocked by #1
 - **Assignee:** [Available]
 - **Estimated Duration:** 1-2 days
@@ -71,6 +75,7 @@ Sequential Path (Critical Path)
 - **Link:** https://github.com/scerruti/moe-expert-prefetching/issues/4
 
 #### #5: Forward Hook Implementation
+
 - **Status:** Blocked by #4
 - **Assignee:** [Available]
 - **Estimated Duration:** 2-3 days
@@ -79,6 +84,7 @@ Sequential Path (Critical Path)
 - **Link:** https://github.com/scerruti/moe-expert-prefetching/issues/5
 
 #### #6: Data Collection Pipeline
+
 - **Status:** Blocked by #2, #3, #5
 - **Assignee:** [Available]
 - **Estimated Duration:** 3-4 days
@@ -87,6 +93,7 @@ Sequential Path (Critical Path)
 - **Link:** https://github.com/scerruti/moe-expert-prefetching/issues/6
 
 #### #7: Parquet Storage & Serialization
+
 - **Status:** Blocked by #6
 - **Assignee:** [Available]
 - **Estimated Duration:** 2-3 days
@@ -95,6 +102,7 @@ Sequential Path (Critical Path)
 - **Link:** https://github.com/scerruti/moe-expert-prefetching/issues/7
 
 #### #8: Validation Testing
+
 - **Status:** Blocked by #7
 - **Assignee:** [Available]
 - **Estimated Duration:** 2-3 days
@@ -105,6 +113,7 @@ Sequential Path (Critical Path)
 ### 📊 HIGH PRIORITY (Support Tasks)
 
 #### #9: Logging and Telemetry
+
 - **Status:** Can start anytime (parallel track)
 - **Assignee:** [Available]
 - **Estimated Duration:** 1-2 days
@@ -113,6 +122,7 @@ Sequential Path (Critical Path)
 - **Link:** https://github.com/scerruti/moe-expert-prefetching/issues/9
 
 #### #10: Documentation
+
 - **Status:** Can start anytime (parallel track)
 - **Assignee:** [Available]
 - **Estimated Duration:** 1-2 days
@@ -120,11 +130,12 @@ Sequential Path (Critical Path)
 - **Description:** README, schema documentation, troubleshooting guide
 - **Link:** https://github.com/scerruti/moe-expert-prefetching/issues/10
 
----
+______________________________________________________________________
 
 ## Labels Reference
 
 ### Component Labels (Blue)
+
 - `phase-1/environment` – Environment setup
 - `phase-1/datasets` – Dataset loading
 - `phase-1/model` – Model and tokenizer
@@ -136,51 +147,63 @@ Sequential Path (Critical Path)
 - `phase-1/docs` – Documentation
 
 ### Type Labels (Purple)
+
 - `type/implementation` – Code implementation
 - `type/testing` – Testing/validation
 - `type/documentation` – Documentation
 
 ### Priority Labels (Orange/Red)
+
 - `priority/critical` – Blocks other work (red)
 - `priority/high` – Should be done soon (orange)
 - `priority/medium` – Normal priority (yellow)
 - `priority/low` – Nice to have (light yellow)
 
 ### Blocker Labels (Green/Red)
+
 - `blocker/none` – No blockers, ready to start (green)
 - `blocker/depends-on` – Has dependencies (yellow)
 - `blocker/blocked` – Currently blocked (red)
 
----
+______________________________________________________________________
 
 ## How to Pick Up Work
 
 ### Step 1: Find Work
+
 1. Go to GitHub Issues: https://github.com/scerruti/moe-expert-prefetching/issues
-2. Filter by `blocker/none` to see work ready to start
-3. Pick an unassigned issue
+1. Filter by `blocker/none` to see work ready to start
+1. Pick an unassigned issue
 
 ### Step 2: Assign Yourself
+
 ```bash
 gh issue edit <issue-number> --add-assignee @me
 ```
 
 ### Step 3: Create a Branch
+
 ```bash
 git checkout -b feature/phase-1-<component-name>
 # Example: feature/phase-1-environment-setup
 ```
 
 ### Step 4: Work & Commit
+
 - Check off tasks in the issue as you complete them
+
 - Commit frequently with clear messages
+
 - Link commits to the issue:
+
   ```bash
   git commit -m "Implement requirement.txt creation - fixes #1"
   ```
 
 ### Step 5: Create a PR
+
 When done, create a pull request linking to the issue:
+
 ```bash
 gh pr create --title "Phase 1: [Component Name]" \
   --body "Closes #<issue-number>" \
@@ -188,71 +211,79 @@ gh pr create --title "Phase 1: [Component Name]" \
 ```
 
 ### Step 6: PR Review
+
 - Address any review comments
 - Ensure all checks pass
 - Merge when approved
 
----
+______________________________________________________________________
 
 ## Current Status
 
-| Issue | Status | Assignee | % Complete |
-|-------|--------|----------|-----------|
-| #1 Environment Setup | Not Started | — | 0% |
-| #2 Dataset Loading (GSM8K) | Blocked | — | 0% |
-| #3 Dataset Loading (MBPP) | Blocked | — | 0% |
-| #4 Model Loading | Blocked | — | 0% |
-| #5 Hook Implementation | Blocked | — | 0% |
-| #6 Data Collection | Blocked | — | 0% |
-| #7 Parquet Storage | Blocked | — | 0% |
-| #8 Validation Testing | Blocked | — | 0% |
-| #9 Logging & Telemetry | Not Started | — | 0% |
-| #10 Documentation | Not Started | — | 0% |
+| Issue                      | Status      | Assignee | % Complete |
+| -------------------------- | ----------- | -------- | ---------- |
+| #1 Environment Setup       | Not Started | —        | 0%         |
+| #2 Dataset Loading (GSM8K) | Blocked     | —        | 0%         |
+| #3 Dataset Loading (MBPP)  | Blocked     | —        | 0%         |
+| #4 Model Loading           | Blocked     | —        | 0%         |
+| #5 Hook Implementation     | Blocked     | —        | 0%         |
+| #6 Data Collection         | Blocked     | —        | 0%         |
+| #7 Parquet Storage         | Blocked     | —        | 0%         |
+| #8 Validation Testing      | Blocked     | —        | 0%         |
+| #9 Logging & Telemetry     | Not Started | —        | 0%         |
+| #10 Documentation          | Not Started | —        | 0%         |
 
 **Overall Progress:** 0/10 issues started
 
----
+______________________________________________________________________
 
 ## Recommended Work Order
 
 For a **single developer**, work on issues in this sequence:
+
 1. **#1** (Environment) – 1-2 days
-2. **#4** (Model Loading) – 1-2 days (parallel: start #2 or #3)
-3. **#2 & #3** (Datasets) – 3-4 days combined (can parallelize)
-4. **#5** (Hooks) – 2-3 days
-5. **#6** (Collection) – 3-4 days
-6. **#7** (Storage) – 2-3 days
-7. **#8** (Validation) – 2-3 days
-8. **#9 & #10** (Logging & Docs) – 2-3 days combined
+1. **#4** (Model Loading) – 1-2 days (parallel: start #2 or #3)
+1. **#2 & #3** (Datasets) – 3-4 days combined (can parallelize)
+1. **#5** (Hooks) – 2-3 days
+1. **#6** (Collection) – 3-4 days
+1. **#7** (Storage) – 2-3 days
+1. **#8** (Validation) – 2-3 days
+1. **#9 & #10** (Logging & Docs) – 2-3 days combined
 
 **Total: ~3-4 weeks**
 
 For a **team**, parallelize issues without blockers:
+
 - Person A: #1 → #4 → #5 → #6 → #7 → #8 (critical path)
 - Person B: #2 (dataset loading)
 - Person C: #3 (dataset loading)
 - Person D: #9 & #10 (logging & docs, can run anytime)
 
----
+______________________________________________________________________
 
 ## FAQ
 
 ### Q: An issue says "Blocked by #X" – can I still start?
+
 **A:** No, wait for that issue to complete. However, you can review the implementation or prepare code offline.
 
 ### Q: What if I find a sub-issue not listed?
+
 **A:** Add it as a checkbox in the existing issue. If it's significant enough for separate tracking, comment on the issue and we can create a new one.
 
 ### Q: How do I know if my work is done?
+
 **A:** Check all the boxes in the "Acceptance Criteria" section. If they're all checked ✅, you're done!
 
 ### Q: What if I get blocked?
+
 **A:** Comment on the GitHub issue with the blocker, mention the maintainer, and pick up a different issue if possible.
 
 ### Q: Can I work on issues in a different order?
+
 **A:** Only if they don't have blocking dependencies. Check the "Blocked by" section in the issue description.
 
----
+______________________________________________________________________
 
 ## Support & Questions
 
@@ -260,7 +291,6 @@ For a **team**, parallelize issues without blockers:
 - **Slack/Email:** Tag the project lead
 - **Documentation:** See phase_1/docs/ folder
 
----
+______________________________________________________________________
 
 **Good luck! 🚀 Pick up an issue and get started!**
-

@@ -3,8 +3,8 @@
 Installed packages must match the pins in requirements.txt (#107).
 
 Local and Colab runs only exercise the same code paths when they run the same
-versions; e.g. Qwen2MoE's gate is nn.Linear in transformers 4.45 but a
-different class with different output in 5.x.
+versions. The routing tests cover the native Qwen router contract in the
+pinned Transformers release.
 """
 
 from importlib.metadata import version

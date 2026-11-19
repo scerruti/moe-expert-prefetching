@@ -1,21 +1,21 @@
 # Phase 2 GitHub Issues & Work Tracking
 
-**Created:** 2026-10-02  
-**Status:** 11 issues created with dependency tracking  
+**Created:** 2026-10-02\
+**Status:** 11 issues created with dependency tracking\
 **Target Completion:** 2026-11-04 (4 weeks)
 
----
+______________________________________________________________________
 
 ## Quick Navigation
 
-All Phase 2 issues are tracked on GitHub with proper labeling and blocking relationships.  
+All Phase 2 issues are tracked on GitHub with proper labeling and blocking relationships.\
 **View all issues:** https://github.com/scerruti/moe-expert-prefetching/issues?q=label:phase-2
 
----
+______________________________________________________________________
 
 ## Issue Dependency Map
 
-```
+```text
 Phase 1 Outputs (Qwen1.5-MoE-A2.7B Parquet)
       │
       ├─→ #40: Data Loading ────────────────────────────────┐
@@ -52,13 +52,14 @@ Phase 1 Outputs (Qwen1.5-MoE-A2.7B Parquet)
           (Depends on #49; final synthesis)
 ```
 
----
+______________________________________________________________________
 
 ## Issues by Priority & Status
 
 ### 🔴 CRITICAL PRIORITY (Blocks Other Work)
 
 #### #40: Data Loading & Preparation
+
 - **Status:** Ready to start (no blockers)
 - **Assignee:** @me
 - **Estimated Duration:** 2-3 days
@@ -71,6 +72,7 @@ Phase 1 Outputs (Qwen1.5-MoE-A2.7B Parquet)
   - `phase_2/scripts/data_loader.py`
 
 #### #42: Baseline Distributions Analysis
+
 - **Status:** Blocked by #40
 - **Assignee:** @me
 - **Estimated Duration:** 3-4 days
@@ -83,6 +85,7 @@ Phase 1 Outputs (Qwen1.5-MoE-A2.7B Parquet)
   - `phase_2/reports/distributions_by_layer.csv`
 
 #### #46: Jensen-Shannon Divergence Computation
+
 - **Status:** Blocked by #42
 - **Assignee:** @me
 - **Estimated Duration:** 3-4 days
@@ -95,6 +98,7 @@ Phase 1 Outputs (Qwen1.5-MoE-A2.7B Parquet)
   - `phase_2/reports/jsd_significance.csv`
 
 #### #48: Layer Specialization Indexing
+
 - **Status:** Blocked by #41, #46
 - **Assignee:** @me
 - **Estimated Duration:** 2-3 days
@@ -107,6 +111,7 @@ Phase 1 Outputs (Qwen1.5-MoE-A2.7B Parquet)
   - `phase_2/reports/layer_classification.md`
 
 #### #49: Visualizations & Chart Publishing
+
 - **Status:** Blocked by #41-48 (all analyses)
 - **Assignee:** @me
 - **Estimated Duration:** 3-4 days
@@ -120,6 +125,7 @@ Phase 1 Outputs (Qwen1.5-MoE-A2.7B Parquet)
   - `phase_2/scripts/visualization.py`
 
 #### #50: Comprehensive Report & Documentation
+
 - **Status:** Blocked by #49
 - **Assignee:** @me
 - **Estimated Duration:** 2-3 days
@@ -132,6 +138,7 @@ Phase 1 Outputs (Qwen1.5-MoE-A2.7B Parquet)
   - `phase_2/README.md`
 
 #### #41: Determinism Verification
+
 - **Status:** Blocked by #40
 - **Assignee:** @me
 - **Estimated Duration:** 2-3 days
@@ -143,11 +150,12 @@ Phase 1 Outputs (Qwen1.5-MoE-A2.7B Parquet)
   - `phase_2/reports/determinism_verification.md`
   - `phase_2/data/determinism_statistics.csv`
 
----
+______________________________________________________________________
 
 ### 🟠 HIGH PRIORITY (Support/Analysis Tasks)
 
 #### #43: Layer-wise Specialization Summaries
+
 - **Status:** Blocked by #42
 - **Assignee:** @me
 - **Estimated Duration:** 2-3 days
@@ -160,6 +168,7 @@ Phase 1 Outputs (Qwen1.5-MoE-A2.7B Parquet)
   - `phase_2/reports/entropy_analysis.csv`
 
 #### #44: Shared Token Identification
+
 - **Status:** Can start anytime (parallel track)
 - **Assignee:** @me
 - **Estimated Duration:** 1-2 days
@@ -172,6 +181,7 @@ Phase 1 Outputs (Qwen1.5-MoE-A2.7B Parquet)
   - `phase_2/reports/token_overlap_analysis.md`
 
 #### #45: Cross-Domain Token Divergence Analysis
+
 - **Status:** Blocked by #44, #42
 - **Assignee:** @me
 - **Estimated Duration:** 3 days
@@ -183,6 +193,7 @@ Phase 1 Outputs (Qwen1.5-MoE-A2.7B Parquet)
   - `phase_2/reports/cross_domain_token_analysis.md`
 
 #### #47: Expert-level Divergence & Specialization
+
 - **Status:** Blocked by #42
 - **Assignee:** @me
 - **Estimated Duration:** 2-3 days
@@ -193,11 +204,12 @@ Phase 1 Outputs (Qwen1.5-MoE-A2.7B Parquet)
   - `phase_2/data/expert_profiles.csv`
   - `phase_2/reports/expert_specialization.md`
 
----
+______________________________________________________________________
 
 ## Labels Reference
 
 ### Component Labels (Blue)
+
 - `phase-2/data-foundation` – Data loading and preparation
 - `phase-2/verification` – Determinism and validation
 - `phase-2/analysis` – Statistical analyses
@@ -206,28 +218,33 @@ Phase 1 Outputs (Qwen1.5-MoE-A2.7B Parquet)
 - `phase-2/documentation` – Documentation and reporting
 
 ### Type Labels (Purple)
+
 - `type/analysis` – Statistical/analytical work
 - `type/visualization` – Visualization and charting
 - `type/documentation` – Documentation
 
 ### Priority Labels (Red/Orange)
+
 - `priority/critical` – Critical path (blocks other work)
 - `priority/high` – Should be done soon (parallel track)
 
 ### Blocker Labels (Green/Yellow)
+
 - `blocker/none` – No blockers, ready to start (green)
 - `blocker/depends-on` – Has dependencies (yellow)
 
----
+______________________________________________________________________
 
 ## How to Pick Up Work
 
 ### Step 1: Find Work
+
 1. Go to GitHub Issues: https://github.com/scerruti/moe-expert-prefetching/issues
-2. Filter by `phase-2` and `blocker/none` to see work ready to start
-3. Pick an issue to work on
+1. Filter by `phase-2` and `blocker/none` to see work ready to start
+1. Pick an issue to work on
 
 ### Step 2: Create a Branch
+
 ```bash
 gh issue develop <issue-number> --checkout
 # Or manually:
@@ -236,15 +253,21 @@ git checkout -b feature/phase-2-<component-name>
 ```
 
 ### Step 3: Work & Commit
+
 - Check off tasks in the issue as you complete them
+
 - Commit frequently with clear messages
+
 - Link commits to the issue:
+
   ```bash
   git commit -m "Implement data loading and validation - fixes #40"
   ```
 
 ### Step 4: Create a PR
+
 When done, create a pull request linking to the issue:
+
 ```bash
 gh pr create --title "Phase 2: [Component Name]" \
   --body "Closes #<issue-number>" \
@@ -252,74 +275,82 @@ gh pr create --title "Phase 2: [Component Name]" \
 ```
 
 ### Step 5: PR Review
+
 - Address any review comments
 - Ensure all checks pass
 - Merge when approved
 
----
+______________________________________________________________________
 
 ## Current Status
 
-| Issue | Title | Status | Assignee | % Complete |
-|-------|-------|--------|----------|-----------|
-| #40 | Data Loading | Not Started | @me | 0% |
-| #41 | Determinism Verification | Blocked | @me | 0% |
-| #42 | Baseline Distributions | Blocked | @me | 0% |
-| #43 | Layer-wise Summaries | Blocked | @me | 0% |
-| #44 | Shared Token Identification | Not Started | @me | 0% |
-| #45 | Cross-Domain Token Divergence | Blocked | @me | 0% |
-| #46 | JSD Analysis | Blocked | @me | 0% |
-| #47 | Expert-level Divergence | Blocked | @me | 0% |
-| #48 | Layer Specialization | Blocked | @me | 0% |
-| #49 | Visualizations | Blocked | @me | 0% |
-| #50 | Comprehensive Report | Blocked | @me | 0% |
+| Issue | Title                         | Status      | Assignee | % Complete |
+| ----- | ----------------------------- | ----------- | -------- | ---------- |
+| #40   | Data Loading                  | Not Started | @me      | 0%         |
+| #41   | Determinism Verification      | Blocked     | @me      | 0%         |
+| #42   | Baseline Distributions        | Blocked     | @me      | 0%         |
+| #43   | Layer-wise Summaries          | Blocked     | @me      | 0%         |
+| #44   | Shared Token Identification   | Not Started | @me      | 0%         |
+| #45   | Cross-Domain Token Divergence | Blocked     | @me      | 0%         |
+| #46   | JSD Analysis                  | Blocked     | @me      | 0%         |
+| #47   | Expert-level Divergence       | Blocked     | @me      | 0%         |
+| #48   | Layer Specialization          | Blocked     | @me      | 0%         |
+| #49   | Visualizations                | Blocked     | @me      | 0%         |
+| #50   | Comprehensive Report          | Blocked     | @me      | 0%         |
 
 **Overall Progress:** 0/11 issues started
 
----
+______________________________________________________________________
 
 ## Recommended Work Order
 
 For **single developer** with moderate parallelism:
+
 1. **#40** (Data Loading) – 2-3 days
-2. **Parallel (Week 1):**
+1. **Parallel (Week 1):**
    - #41 (Determinism) – 2-3 days
    - #42 (Baseline Dist) – 3-4 days
    - #44 (Shared Tokens) – 1-2 days
-3. **Sequential (Week 2-3):**
+1. **Sequential (Week 2-3):**
    - #43 (Layer Summaries) – 2-3 days (after #42)
    - #45 (Token Divergence) – 3 days (after #44, #42)
    - #46 (JSD) – 3-4 days (after #42)
    - #47 (Expert Divergence) – 2-3 days (after #42)
-4. **#48** (Layer Specialization) – 2-3 days (after #41, #46)
-5. **#49** (Visualizations) – 3-4 days (after all analyses)
-6. **#50** (Report) – 2-3 days (after #49)
+1. **#48** (Layer Specialization) – 2-3 days (after #41, #46)
+1. **#49** (Visualizations) – 3-4 days (after all analyses)
+1. **#50** (Report) – 2-3 days (after #49)
 
 **Total: ~4 weeks (Oct 7 - Nov 4)**
 
----
+______________________________________________________________________
 
 ## FAQ
 
 ### Q: An issue says "Blocked by #X" – can I still start?
+
 **A:** Not recommended. Wait for the blocking issue to complete. However, you can review the implementation or prepare infrastructure offline.
 
 ### Q: What if I find a sub-issue not listed?
+
 **A:** Add it as a checkbox in the existing issue. If significant, comment on the issue and we can create a new one.
 
 ### Q: How do I know if my work is done?
+
 **A:** Check all the boxes in the "Acceptance Criteria" section. If they're all checked ✅, you're done!
 
 ### Q: What if I get blocked?
+
 **A:** Comment on the GitHub issue with details, mention the maintainer, and pick up a different issue if possible.
 
 ### Q: Can I work on issues in a different order?
+
 **A:** Only if they don't have blocking dependencies. Check the "Blocked by" section in the issue description.
 
 ### Q: How do I handle optional DeepSeek analysis?
+
 **A:** DeepSeek work is optional if Phase 1 data becomes available. Focus on Qwen MVP first; add DeepSeek comparison if time permits.
 
----
+______________________________________________________________________
 
 ## Support & Questions
 
@@ -328,7 +359,6 @@ For **single developer** with moderate parallelism:
 - **Documentation:** See phase_2/docs/ folder
 - **Troubleshooting:** Check ARCHITECTURE.md for technical details
 
----
+______________________________________________________________________
 
 **Good luck! 🚀 Pick up an issue and get started!**
-

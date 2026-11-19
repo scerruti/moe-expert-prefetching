@@ -1,0 +1,16 @@
+name: Set up pinned CI tools
+description: Install hashed CI tools, not application dependencies.
+runs:
+  using: composite
+  steps:
+  - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+    with:
+      python-version: '3.13'
+      cache: pip
+      cache-dependency-path: requirements/ci-tools.lock
+  - shell: bash
+    run: |
+      set -euo pipefail
+      mkdir -p reports
+      python -m pip install --require-hashes -r requirements/ci-tools.lock
+      python -m pip freeze > reports/tool-environment.txt
