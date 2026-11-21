@@ -67,6 +67,20 @@ Stephen Cerruti (with team validation via Phase 1 collection success)
 
 **Confirmed (Nov 1, Colab A100):** a batch of the 8 longest prompts (about 180 tokens each) peaks at 30.5 GB of 42.4 GB, so batch size 8 fits. The default is now **batch size 32** (#106): with the unused LM head skipped, the 32 longest prompts peak at 30.4 GB, and collection runs at about 31 ms per prompt.
 
+## Amendment: Phase 1 finishes on Qwen1.5; Phase 2 makes the model swappable (Nov 21, 2026)
+
+**What this corrects.** The October 30 decision locked Phase 1 to Qwen1.5-MoE-A2.7B and removed multi-model support as YAGNI. Choosing Qwen was right: Mixtral ran out of memory on Colab, and Qwen worked. But the decision also departed from `SYSTEM_DESIGN.md`, which planned a pipeline that moves between MoE models. That departure was never stated as a goal change, and it wasn't intended as one.
+
+**Decision.**
+- **Phase 1 finishes as it is,** locked to Qwen1.5-MoE-A2.7B, including the official collection. Nothing in Phase 1 changes.
+- **Phase 2 corrects course:** the pipeline becomes able to swap in different MoE models. Qwen1.5 serves as the small-model proof of concept, and findings can then be reproduced on other MoE models, including larger ones.
+
+**Why.** Findings that hold across models are worth more than findings on one. It also supports research on separating experts from their models and combining them in new ways, which needs a proof of concept on a small MoE that can then be reproduced on a larger one.
+
+**What's model-specific today.** Only the router hook: the gate path (`layer.mlp.gate`), the top-4 check, and the router's output format. Collection, storage, tokenization and validation are already model-agnostic (see "What Stays General" above). The Phase 2 work is mainly a per-model adapter for those three items, plus a memory check for each model added. It's planned in the Phase 2 reorganisation (#112).
+
+**Follow-up:** update `SYSTEM_DESIGN.md` to match (#110).
+
 ## See Also
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) — Acceptance criteria must be proven
