@@ -29,9 +29,31 @@ def load(path):
     return df, probs, np.sort(sel, axis=1)
 
 
+def check_same_rows(a, b, ref_path, other_path):
+    """Both runs must hold exactly the same (prompt, token, layer) rows, each once.
+
+    The comparison below joins on these keys, and a join silently leaves out
+    rows that only one run has, so a missing row would read as agreement.
+    """
+    problems = []
+    for df, path in ((a, ref_path), (b, other_path)):
+        duplicates = int(df.duplicated(KEY).sum())
+        if duplicates:
+            problems.append(f"{duplicates} duplicate keys in {Path(path).name}")
+    keys_a = set(map(tuple, a[KEY].itertuples(index=False)))
+    keys_b = set(map(tuple, b[KEY].itertuples(index=False)))
+    if keys_a - keys_b:
+        problems.append(f"{len(keys_a - keys_b)} missing from {Path(other_path).name}")
+    if keys_b - keys_a:
+        problems.append(f"{len(keys_b - keys_a)} missing from {Path(ref_path).name}")
+    if problems:
+        raise ValueError("Runs don't hold the same routing rows: " + "; ".join(problems))
+
+
 def compare(ref_path, other_path):
     a, pa_, sa = load(ref_path)
     b, pb_, sb = load(other_path)
+    check_same_rows(a, b, ref_path, other_path)
     a["ia"], b["ib"] = np.arange(len(a)), np.arange(len(b))
     m = a.merge(b, on=KEY)
     ia, ib = m["ia"].to_numpy(), m["ib"].to_numpy()

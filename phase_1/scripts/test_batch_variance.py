@@ -49,3 +49,27 @@ def test_large_difference_after_a_flip_counts_as_cascade(tmp_path, capsys):
 
     assert "flip on the same token: 100.0%" in out
     assert "large deviations with no earlier flip: 0 rows" in out
+
+
+def test_a_row_missing_from_one_run_is_rejected(tmp_path):
+    """Waleed's #59 review: an inner join would compare only shared rows and report 100% agreement."""
+    import pytest
+
+    reference, short = tmp_path / "run_0_gsm8k.parquet", tmp_path / "run_1_gsm8k.parquet"
+    write_run(reference, [PROBS, PROBS, PROBS])
+    write_run(short, [PROBS, PROBS])
+
+    with pytest.raises(ValueError, match="1 missing"):
+        batch_variance.compare(reference, short)
+
+
+def test_duplicate_keys_are_rejected(tmp_path):
+    import pytest
+
+    reference, doubled = tmp_path / "run_0_gsm8k.parquet", tmp_path / "run_1_gsm8k.parquet"
+    write_run(reference, [PROBS, PROBS])
+    table = pq.read_table(reference)
+    pq.write_table(pa.concat_tables([table, table.slice(0, 1)]), doubled)
+
+    with pytest.raises(ValueError, match="duplicate"):
+        batch_variance.compare(reference, doubled)
