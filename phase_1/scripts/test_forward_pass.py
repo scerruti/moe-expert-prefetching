@@ -271,6 +271,32 @@ def test_pipeline_function_reuses_a_given_model(monkeypatch):
     assert all(len(t.layer_data) == p.num_layers for p in routing for t in p.token_routing)
 
 
+def test_pipeline_leaves_no_hooks_when_tokenization_fails(monkeypatch):
+    """A tokenization failure must not leave router hooks on a reused model (CPU, toy model)."""
+    import pytest
+    import forward_pass
+    from routing_test_helpers import make_toy_qwen
+
+    model = make_toy_qwen()
+
+    def count_forward_hooks(m):
+        return sum(len(mod._forward_hooks) for mod in m.modules())
+
+    hooks_before = count_forward_hooks(model)
+
+    def failing_tokenize_batch(self, prompts):
+        raise RuntimeError("tokenization failed")
+
+    monkeypatch.setattr(forward_pass.TokenizationPipeline, "tokenize_batch", failing_tokenize_batch)
+
+    with pytest.raises(RuntimeError, match="tokenization failed"):
+        forward_pass.run_forward_pass_pipeline(
+            "toy", ["hello"], device="cpu", model=model, tokenizer=object()
+        )
+
+    assert count_forward_hooks(model) == hooks_before
+
+
 def test_pipeline_function_rejects_a_model_without_its_tokenizer():
     """Passing only one of model and tokenizer is an error, not a silent second load."""
     import pytest
