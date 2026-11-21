@@ -351,12 +351,14 @@ def run_forward_pass_pipeline(
         capture.load_model()
     else:
         capture.model, capture.tokenizer = model, tokenizer
-    capture.setup_hooks()
 
+    # Tokenize before attaching hooks: tokenization doesn't need them, and a
+    # failure here then leaves nothing behind on a model the caller may reuse.
     logger.info(f"Tokenizing {len(prompts)} prompts...")
     tokenization_result = TokenizationPipeline(capture.tokenizer, model_name).tokenize_batch(prompts)
 
     try:
+        capture.setup_hooks()
         routing_data = capture.run_forward_pass(
             token_tensors=tokenization_result["token_tensors"],
             sequence_ids=tokenization_result["sequence_ids"],
