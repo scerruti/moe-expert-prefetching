@@ -241,6 +241,7 @@ class FullPipeline:
 
         prompts_processed = 0
         routing_events_count = 0
+        num_layers = self.capture.model.config.num_hidden_layers
         timing = dict.fromkeys(("tokenize", "forward", "extract", "convert", "write", "verify"), 0.0)
         pass_start = time.perf_counter()
 
@@ -272,6 +273,14 @@ class FullPipeline:
 
                     t0 = time.perf_counter()
                     table = self._routing_table(batch, tokenization_result, dataset_name)
+                    # Every real token at every layer, counted from the tokenizer rather
+                    # than from the routing rows, so a missing row can't go unnoticed
+                    expected_rows = sum(len(ids) for ids in tokenization_result["token_ids"]) * num_layers
+                    if table.num_rows != expected_rows:
+                        raise ValueError(
+                            f"Batch at prompt {start} has {table.num_rows} routing rows; expected "
+                            f"{expected_rows} (every real token at all {num_layers} layers)"
+                        )
                     t1 = time.perf_counter()
                     writer.write_table(table, num_prompts=len(batch_prompts))
                     timing["convert"] += t1 - t0
@@ -321,9 +330,9 @@ class FullPipeline:
         """
         Parquet rows for one batch, built from arrays rather than row dicts (#106).
 
-        Applies _validate_row's rules to whole arrays: rows with NaN/inf
-        probabilities are skipped with a warning, and a change in expert or
-        top-k width within a run raises, since it means a whole batch is wrong.
+        Applies _validate_row's rules to whole arrays. A NaN/inf probability or a
+        change in expert or top-k width within a run raises: dropping rows would
+        leave a gap in the dataset that nothing downstream could see.
         """
         token_ids_list = tokenization_result["token_ids"]
         token_strs_list = tokenization_result["token_strs"]
@@ -338,9 +347,14 @@ class FullPipeline:
         elif widths != self._routing_widths:
             raise ValueError(f"Routing widths changed within the run: {self._routing_widths} -> {widths}")
 
-        keep = np.isfinite(batch.expert_probs).all(axis=1) & np.isfinite(batch.selected_probs).all(axis=1)
-        if not keep.all():
-            logger.warning(f"Skipping {int((~keep).sum())} rows with NaN/inf probabilities")
+        finite = np.isfinite(batch.expert_probs).all(axis=1) & np.isfinite(batch.selected_probs).all(axis=1)
+        if not finite.all():
+            first = int(np.flatnonzero(~finite)[0])
+            raise ValueError(
+                f"{int((~finite).sum())} routing rows have NaN/inf probabilities; first at prompt "
+                f"{sequence_ids[int(batch.prompt_index[first])]}, token {int(batch.token_position[first])}, "
+                f"layer {int(batch.layer_index[first])}"
+            )
 
         # Rows are ordered by prompt, then token, then layer
         tokens_per_prompt = np.array([len(ids) for ids in token_ids_list])
@@ -352,22 +366,21 @@ class FullPipeline:
                               batch.num_layers)
 
         def list_column(matrix: np.ndarray, value_type: pa.DataType) -> pa.ListArray:
-            matrix = matrix[keep]
             rows, width = matrix.shape
             offsets = pa.array(np.arange(rows + 1, dtype=np.int32) * width)
             return pa.ListArray.from_arrays(offsets, pa.array(matrix.reshape(-1), type=value_type))
 
         return pa.Table.from_arrays(
             [
-                pa.array(sequence_id[keep], type=pa.string()),
-                pa.array(token_id[keep], type=pa.int32()),
-                pa.array(token_str[keep], type=pa.string()),
-                pa.array(batch.token_position[keep].astype(np.int32), type=pa.int32()),
-                pa.array(batch.layer_index[keep].astype(np.int32), type=pa.int32()),
+                pa.array(sequence_id, type=pa.string()),
+                pa.array(token_id, type=pa.int32()),
+                pa.array(token_str, type=pa.string()),
+                pa.array(batch.token_position.astype(np.int32), type=pa.int32()),
+                pa.array(batch.layer_index.astype(np.int32), type=pa.int32()),
                 list_column(batch.expert_probs.astype(np.float32), pa.float32()),
                 list_column(batch.selected_experts.astype(np.int16), pa.int16()),
                 list_column(batch.selected_probs.astype(np.float32), pa.float32()),
-                pa.array(np.full(int(keep.sum()), dataset_name, dtype=object), type=pa.string()),
+                pa.array(np.full(num_rows, dataset_name, dtype=object), type=pa.string()),
             ],
             schema=ROUTING_SCHEMA,
         )
@@ -395,11 +408,9 @@ class FullPipeline:
                         "dataset_source": dataset_name,
                     }
 
-                    # Validate row
-                    if self._validate_row(row):
-                        rows.append(row)
-                    else:
-                        logger.warning(f"Skipping invalid row: {row}")
+                    if not self._validate_row(row):
+                        raise ValueError(f"Invalid routing row: {row}")
+                    rows.append(row)
 
         return rows
 

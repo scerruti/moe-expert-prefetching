@@ -225,3 +225,73 @@ def test_fast_path_writes_the_same_rows_as_the_reference_path(tmp_path):
             assert row[column] == ref[column], (k, column)
         for column in ("expert_probs", "selected_probs"):
             assert row[column] == pytest.approx(ref[column], abs=1e-7), (k, column)
+
+
+def five_prompts():
+    return [Prompt(f"gsm8k-train-{i:05d}", f"Question number {i}?") for i in range(5)]
+
+
+def test_bad_routing_values_fail_the_pass(tmp_path):
+    """Waleed's #59 review: a NaN in the routing must fail the pass, not silently drop rows."""
+    import numpy as np
+
+    pipeline = toy_pipeline(batch_size=2)
+    capture_batch = pipeline.capture.capture_batch
+
+    def capture_with_nan(*args, **kwargs):
+        batch = capture_batch(*args, **kwargs)
+        batch.expert_probs[0, 0] = np.nan
+        return batch
+
+    pipeline.capture.capture_batch = capture_with_nan
+
+    succeeded = pipeline._run_pass(run_id=0, seed=42, prompts=five_prompts(),
+                                   dataset_name="test", output_path=tmp_path / "run.parquet")
+
+    assert not succeeded
+    assert any("NaN" in error for error in pipeline.stats.errors)
+
+
+def test_missing_rows_fail_the_pass(tmp_path):
+    """Waleed's #59 review: rows must be checked against every token at every layer, not just counted."""
+    pipeline = toy_pipeline(batch_size=2)
+    routing_table = pipeline._routing_table
+
+    def table_missing_a_row(*args, **kwargs):
+        table = routing_table(*args, **kwargs)
+        return table.slice(0, table.num_rows - 1)
+
+    pipeline._routing_table = table_missing_a_row
+
+    succeeded = pipeline._run_pass(run_id=0, seed=42, prompts=five_prompts(),
+                                   dataset_name="test", output_path=tmp_path / "run.parquet")
+
+    assert not succeeded
+    assert any("expected" in error for error in pipeline.stats.errors)
+
+
+def test_complete_pass_writes_every_token_at_every_layer(tmp_path):
+    pipeline = toy_pipeline(batch_size=2)
+    prompts = five_prompts()
+    tokens = sum(len(pipeline.tokenizer.encode(p.text)) for p in prompts)
+    layers = pipeline.capture.model.config.num_hidden_layers
+
+    succeeded = pipeline._run_pass(run_id=0, seed=42, prompts=prompts,
+                                   dataset_name="test", output_path=tmp_path / "run.parquet")
+
+    assert succeeded
+    assert pq.read_metadata(tmp_path / "run.parquet").num_rows == tokens * layers
+
+
+def test_reference_row_converter_rejects_invalid_rows():
+    """The per-row path must not skip invalid rows silently either."""
+    import pytest
+
+    pipeline = FullPipeline()
+    layer = {"layer_index": 0, "expert_probs": [float("nan"), 0.5], "selected_experts": [1],
+             "selected_probs": [0.5]}
+    token = SimpleNamespace(token_id=5, token_str="a", token_position=0, layer_data=[layer])
+    prompt = SimpleNamespace(sequence_id="gsm8k-train-00000", token_routing=[token])
+
+    with pytest.raises(ValueError, match="Invalid routing row"):
+        pipeline._convert_to_parquet_rows([prompt], "gsm8k")
