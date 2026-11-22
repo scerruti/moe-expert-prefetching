@@ -8,21 +8,10 @@ different class with different output in 5.x.
 """
 
 from importlib.metadata import version
-from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-
-
-def pinned_requirements():
-    pins = {}
-    for line in (REPO_ROOT / "requirements.txt").read_text().splitlines():
-        line = line.split("#")[0].strip()
-        if "==" in line:
-            name, pinned = line.split("==")
-            pins[name.strip()] = pinned.strip()
-    return pins
+from dependency_versions import pinned_requirements
 
 
 @pytest.mark.parametrize("package,pinned", sorted(pinned_requirements().items()))
