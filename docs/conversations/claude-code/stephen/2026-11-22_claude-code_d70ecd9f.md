@@ -1,8 +1,8 @@
-# Claude Code session, 22 November 2026
+# Stephen's Claude Code session, 22 November 2026
 
 *Session `d70ecd9f` was forked from session `088b91b3` at 21 November 2026, 14:13. Their shared history appears only in `088b91b3`'s transcripts.*
 
-Sanitized transcript of a Claude Code session. The user's prompts and Claude's replies are word for word. Each tool call is shown as one line; its output is omitted. Pasted content and Claude's internal reasoning are removed, and personal details are redacted. Nothing is removed by topic. See `README.md` for the method.
+Sanitized transcript of a Claude Code session. The user's prompts and Claude's replies are word for word. Each tool call is shown as one line; its output is omitted. Pasted content and Claude's internal reasoning are removed, and personal details are redacted. Nothing is removed by topic. See `../README.md` for how these files are made.
 
 ## Turn 1 (06:01)
 
@@ -1553,8 +1553,8 @@ That's a review comment on Waleed's #129. Should I draft it for you?
 <details><summary>6 tool calls</summary>
 
 - Ran a command: List the 31 October turns around the career discussion
-- Read `-ai-log/sanitize.py`
-- Edited `-ai-log/sanitize.py`
+- Read `~/moe-ai-log/sanitize.py`
+- Edited `~/moe-ai-log/sanitize.py`
 - Ran a command: Add a persistent drops file, redact turns 85–91, and verify
 - Ran a command: Check other exports for references to the career discussion
 - Ran a command: Show the remaining career references in context

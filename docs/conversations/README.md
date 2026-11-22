@@ -22,10 +22,9 @@ This folder documents the project's intellectual history: conversations with AI 
 
 ### Claude Code sessions
 
-- [**Claude Code sessions, 18 October 2026 onwards**](claude-code/README.md)
-  - Sanitized transcripts of every surviving Claude Code session, one file per session per day
-  - A summary of each day, including the mistakes and corrections
-  - How the files are made, and what is redacted
+- [**Claude Code session records**](claude-code/README.md): one folder per contributor
+  - [Stephen's sessions](claude-code/stephen/README.md), 18 October 2026 onwards, with a summary of each day, including the mistakes and corrections
+  - How the records are made, the redaction rules, and how to add your own
 
 ## Slide Decks
 

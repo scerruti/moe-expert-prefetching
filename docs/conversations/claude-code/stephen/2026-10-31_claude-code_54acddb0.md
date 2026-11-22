@@ -1,6 +1,6 @@
-# Claude Code session, 31 October 2026
+# Stephen's Claude Code session, 31 October 2026
 
-Sanitized transcript of a Claude Code session. The user's prompts and Claude's replies are word for word. Each tool call is shown as one line; its output is omitted. Pasted content and Claude's internal reasoning are removed, and personal details are redacted. Nothing is removed by topic. See `README.md` for the method.
+Sanitized transcript of a Claude Code session. The user's prompts and Claude's replies are word for word. Each tool call is shown as one line; its output is omitted. Pasted content and Claude's internal reasoning are removed, and personal details are redacted. Nothing is removed by topic. See `../README.md` for how these files are made.
 
 ## Turn 1 (12:52)
 
@@ -1440,7 +1440,7 @@ Also update the registration logging to be more explicit:
 Now run a single test to see if hooks are being called. If you see "🎣 Hook at layer X FIRED" messages, the hooks are working but data capture is broken. If you don't see them, the gate modules aren't being invoked at all:
 
 ```bash
-cd 
+cd ~/moe
 python -m pytest phase_1/scripts/test_full_pipeline.py::test_single_pass_execution -xvs 2>&1 | tee test_hook_debug.txt
 ```
 
@@ -2518,7 +2518,7 @@ We can use `gh discussion create` to start the thread. Let's wait for the test r
 Now create the discussion thread:
 
 ```bash
-cd  && gh discussion create --title "Phase 1: Routing Telemetry Capture - Bugs & Fixes (Issue #97)" --body "## Summary
+cd ~/moe && gh discussion create --title "Phase 1: Routing Telemetry Capture - Bugs & Fixes (Issue #97)" --body "## Summary
 Fixed 4 critical bugs in the routing telemetry capture pipeline. All GPU tests now pass (14 passed, 4 skipped).
 
 ## Bugs Found & Fixed
@@ -2618,7 +2618,7 @@ Once we see which tests were skipped, we can create a comprehensive discussion c
 I apologize—that was unnecessary. We already have what we need: 14 passed, 4 skipped. We don't need another run. Let me create the comprehensive discussion covering all bugs #90-#97 without any more tests:
 
 ```bash
-cd  && gh discussion create --title "Phase 1: Full Collection Notebook - Complete Bug Fix Report (Issues #90-#97)" --body "## Summary
+cd ~/moe && gh discussion create --title "Phase 1: Full Collection Notebook - Complete Bug Fix Report (Issues #90-#97)" --body "## Summary
 Fixed 8 critical bugs in the full collection pipeline. All GPU tests now pass (14 passed, 4 skipped as expected).
 
 ## Issues Fixed
@@ -2764,7 +2764,7 @@ This should be documented in the discussion: the 4 skipped tests are intentional
 Update the discussion command:
 
 ```bash
-cd  && gh discussion create --title "Phase 1: Full Collection Notebook - Complete Bug Fix Report (Issues #90-#97)" --body "## Summary
+cd ~/moe && gh discussion create --title "Phase 1: Full Collection Notebook - Complete Bug Fix Report (Issues #90-#97)" --body "## Summary
 Fixed 8 critical bugs in the full collection pipeline. All GPU tests now pass (14 passed, 4 intentionally skipped to save GPU costs).
 
 ## Issues Fixed

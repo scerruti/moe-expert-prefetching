@@ -60,3 +60,10 @@ scripts/phase*/
 *.pdf (keep references/, exclude others)
 *.mp4
 *.mov
+
+# AI session records: private settings never go in the repo
+private_terms.txt
+pay_context.txt
+flag_terms.txt
+drops.json
+*.REVIEW.md

@@ -1,8 +1,8 @@
-# Claude Code session, 21 November 2026
+# Stephen's Claude Code session, 21 November 2026
 
 *Session `d70ecd9f` was forked from session `088b91b3` at 21 November 2026, 14:13. Their shared history appears only in `088b91b3`'s transcripts.*
 
-Sanitized transcript of a Claude Code session. The user's prompts and Claude's replies are word for word. Each tool call is shown as one line; its output is omitted. Pasted content and Claude's internal reasoning are removed, and personal details are redacted. Nothing is removed by topic. See `README.md` for the method.
+Sanitized transcript of a Claude Code session. The user's prompts and Claude's replies are word for word. Each tool call is shown as one line; its output is omitted. Pasted content and Claude's internal reasoning are removed, and personal details are redacted. Nothing is removed by topic. See `../README.md` for how these files are made.
 
 ## Turn 1 (14:15)
 

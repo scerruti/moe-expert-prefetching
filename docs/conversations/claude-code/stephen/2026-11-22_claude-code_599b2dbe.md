@@ -1,6 +1,6 @@
-# Claude Code session, 22 November 2026
+# Stephen's Claude Code session, 22 November 2026
 
-Sanitized transcript of a Claude Code session. The user's prompts and Claude's replies are word for word. Each tool call is shown as one line; its output is omitted. Pasted content and Claude's internal reasoning are removed, and personal details are redacted. Nothing is removed by topic. See `README.md` for the method.
+Sanitized transcript of a Claude Code session. The user's prompts and Claude's replies are word for word. Each tool call is shown as one line; its output is omitted. Pasted content and Claude's internal reasoning are removed, and personal details are redacted. Nothing is removed by topic. See `../README.md` for how these files are made.
 
 ## Turn 1 (06:10)
 
@@ -351,7 +351,7 @@ Everything is installed and checked:
 /tmp
 ~/civic-scope/frontend/src/data
 phase_1
-
+~/moe
 ```
 
 Global settings apply to every session on your default account, whatever project it's in. That's why `moe` sees folders from unrelated projects. This list likely built up over time: when you approve folder access and choose to always allow it, Claude Code can save that folder to your settings. If that happened while working on `curriculum_templates` with the wrong account, it would explain how the folder ended up there.
