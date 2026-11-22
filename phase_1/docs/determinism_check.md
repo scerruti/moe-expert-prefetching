@@ -12,7 +12,7 @@ Phase 1 records which experts the router picks for every token at every layer. O
 2. **Same batch, same result.** Running an identical batch twice must give bitwise-identical routing. This is already shown (#114).
 3. **Drop the 0.01 rule.** Real runs break it for legitimate reasons.
 4. **Keep a near-tie check across batch orders, as a diagnostic.** For each **root change** (defined below), the gap between the router's kth and (k+1)th experts must be within the model's **near-tie window**, where k is the model's number of experts per token (k = 4 for Qwen1.5). Use the smaller of the two orderings' gaps. A root change outside the window is a **warning** to investigate, not proof of a bug.
-5. **The window is computed for each model** by a fixed procedure (below). Nobody picks the number.
+5. **The window is computed for each model** by a fixed procedure (below), implemented in #60. Nobody picks the number.
 6. **Report the change statistics with every result:** how many decisions changed, how many were root changes, and their gaps.
 
 ## Root changes
@@ -60,7 +60,7 @@ Checking every change, or every first change, would raise warnings for legitimat
 
 **Where 3 comes from.** The pilot uses different prompts from the real collection and may miss the rarest near-ties. A 3× margin covers that, while staying far below the gaps of real errors. It's a project-wide choice, set once and not tuned per model.
 
-**Qwen1.5's window.** Using the trial collection as its pilot: 3,429 root changes (well above 99), largest gap 0.00035036, so the window is **3 × 0.00035 ≈ 0.00105**. It applies to the official Phase 1 collection. If the official collection's settings differ from the trial's (for example after the transformers upgrade, #124), a new pilot recomputes it.
+**Qwen1.5's window.** Using the trial collection as its pilot: 3,429 root changes (well above 99), largest gap 0.00035036, so the window is **3 × 0.00035 ≈ 0.00105**. This was computed by hand, with a throwaway analysis script; #60 adds the code that computes it, and a test that reproduces these figures from the trial data. It applies to the official Phase 1 collection. If the official collection's settings differ from the trial's (for example after the transformers upgrade, #124), a new pilot recomputes it.
 
 ## Limitations
 
@@ -78,4 +78,4 @@ Checking every change, or every first change, would raise warnings for legitimat
 - #128: Waleed's review, which found the cross-token knock-ons and the depth effect.
 - `phase_1/docs/experiments/k_scaling.md` (branch `experiment/k-scaling`): the near-tie table and gap definitions.
 - #124: the transformers 5.23 pre-test, where changes across versions match batch-order changes (about 2%).
-- The root-change figures above come from `data/phase_1_trial_38ef1da/determinism`, comparing every pair of orderings.
+- The root-change figures above come from `data/phase_1_trial_38ef1da/determinism`, comparing every pair of orderings. They were computed by hand; until #60 lands, they can't yet be reproduced from code in the repo.
