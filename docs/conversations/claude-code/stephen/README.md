@@ -2,7 +2,7 @@
 
 How Stephen used Claude Code to do this project's work, one file per session per day. See [`../README.md`](../README.md) for how the files are made and what's redacted.
 
-Sessions before 18 October 2026 aren't here. Claude Code deletes transcripts after 30 days, and they were gone before this record started.
+Sessions before 18 October 2026 aren't here; their transcripts were no longer on Stephen's Mac when this record started, most likely removed by Claude Code's 30-day cleanup.
 
 ## Sessions
 
@@ -14,7 +14,7 @@ Repo status, an in-depth review of the project against its open issues, and unbl
 
 ### 2026-10-28: [Phase 1 status and the first approvals](2026-10-28_claude-code_54acddb0.md)
 
-Reviewing Waleed's PR and merging #56. Stephen couldn't approve his own PR, so Claude added a note that he was merging without approval, and a review was requested from Dvora, with a backup email.
+Reviewing Waleed's PR and merging #56. Stephen couldn't approve his own PR, so Claude added a note that he was merging without approval, and a review was requested from Dvora, and Claude drafted a backup email.
 
 ### 2026-10-29: [stacking the Phase 1 branches, and a timesheet](2026-10-29_claude-code_54acddb0.md)
 
@@ -54,7 +54,7 @@ After Waleed's reviews, #111 and #115 merged; the stacked branches were repaired
 
 ### 2026-11-19: [preparing to discuss #120](2026-11-19_claude-code_088b91b3.md)
 
-Notes for the meeting about Waleed's large #120, including how to give feedback kindly. Stephen checked whether Claude's wording read as a dig at Waleed, and used Claude to understand why #120 might have been written, looking for a root cause that needed a wider fix. Claude's answer, from the evidence, was that #120 built on the earlier CI work, and that the best way to find out was to ask. In the meeting, Waleed explained he was adopting best practices from another project. Also the #58 and #59 problems, and questions from the pizza seminar.
+Notes for the meeting about Waleed's large #120, including how to give feedback kindly. Stephen checked whether Claude's wording read as a dig at Waleed, and used Claude to understand why #120 might have been written, looking for a root cause that needed a wider fix. Claude's answer, from the evidence, was that #120 built on the earlier CI work, and that the best way to find out was to ask. *(Added 22 November: Stephen noted that in the meeting, Waleed explained he was adopting best practices from another project. See the [22 November record](2026-11-22_claude-code_d70ecd9f.md).)* Also the #58 and #59 problems, and questions from the pizza seminar.
 
 ### 2026-11-21: [reviews, splitting #120, and a fork](2026-11-21_claude-code_088b91b3.md)
 
@@ -62,7 +62,7 @@ A GPU run for #58, a fix for #59 silently dropping rows, and splitting #120 into
 
 ### 2026-11-21: [course correction and the determinism decision](2026-11-21_claude-code_d70ecd9f.md)
 
-The #126 results. Stephen recognised that a 30 October decision had diverged from the system design, and amended it (#127): Phase 1 finishes on Qwen, and Phase 2 makes the model swappable. Claude kept insisting on choosing a second model until Stephen corrected it. The determinism-check decision, with repeated corrections to Claude's writing ("Speak more plainly"; "I see word soup…"), became #128. Claude kept naming only Waleed as reviewer until Stephen asked why.
+The #126 results. Stephen recognised that a 30 October decision had diverged from the system design, and amended it (#127): Phase 1 finishes on Qwen, and Phase 2 makes the model swappable. Claude kept insisting on choosing a second model until Stephen corrected it. The determinism-check decision, with repeated corrections to Claude's writing ("Speak more plainly"; "I see word soup…"), became the decision-document PR, opened just as the session hit its usage limit (it's #128, per the next day's record). Claude kept naming only Waleed as reviewer until Stephen asked why.
 
 ### 2026-11-22: [separating two Claude accounts](2026-11-22_claude-code_599b2dbe.md)
 
