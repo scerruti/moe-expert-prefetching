@@ -77,7 +77,15 @@ Stephen Cerruti (with team validation via Phase 1 collection success)
 
 **Why.** Findings that hold across models are worth more than findings on one. It also supports research on separating experts from their models and combining them in new ways, which needs a proof of concept on a small MoE that can then be reproduced on a larger one.
 
-**What's model-specific today.** Only the router hook: the gate path (`layer.mlp.gate`), the top-4 check, and the router's output format. Collection, storage, tokenization and validation are already model-agnostic (see "What Stays General" above). The Phase 2 work is mainly a per-model adapter for those three items, plus a memory check for each model added. It's planned in the Phase 2 reorganisation (#112).
+**What's model-specific today.** More than the router hook. Collection and validation still assume every decoder layer is an MoE layer: extraction expects a router event from every layer, and #59's row count is tokens × all decoder layers. A model with dense layers between its MoE layers fails even with the right gate hook. Waleed showed this with a tiny Qwen2MoE model with `decoder_sparse_step=2` (#127). So "What Stays General" above is wrong about data collection and determinism validation. The Phase 2 work covers:
+
+- the router hook: the gate path (`layer.mlp.gate`), the top-k check, and the router's output format;
+- which layers are routed, recorded as metadata;
+- coverage and row-count checks based on the routed layers, not every decoder layer;
+- each model's routing semantics, such as how it normalises the top-k probabilities;
+- a memory check for each model added.
+
+Tokenization and storage are model-agnostic. The work is planned in the Phase 2 reorganisation (#112).
 
 **Follow-up:** update `SYSTEM_DESIGN.md` to match (#110).
 
