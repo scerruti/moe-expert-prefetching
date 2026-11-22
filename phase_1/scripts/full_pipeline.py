@@ -462,6 +462,46 @@ class FullPipeline:
         logger.info("PHASE 1 FULL PIPELINE EXECUTION")
         logger.info("=" * 60)
 
+        # Router hooks are removed whether the collection finishes or fails partway,
+        # so a pipeline kept in a notebook never holds hooks on the model (#59 review)
+        try:
+            self._collect()
+        except BaseException:
+            self._remove_hooks(quietly=True)  # never let a cleanup error hide the original one
+            raise
+        self._remove_hooks()
+
+        logger.info("\n" + "=" * 60)
+        logger.info("PIPELINE EXECUTION SUMMARY")
+        logger.info("=" * 60)
+        logger.info(f"Full passes completed: {self.stats.full_passes_completed}/2")
+        logger.info(f"Determinism orderings completed: {self.stats.runs_completed}/{self.num_runs}")
+        logger.info(f"Prompts processed: {self.stats.total_prompts_processed}")
+        logger.info(f"Routing events captured: {self.stats.total_routing_events}")
+        logger.info(f"Errors: {len(self.stats.errors)}")
+
+        if self.stats.errors:
+            logger.error("Errors encountered:")
+            for error in self.stats.errors:
+                logger.error(f"  - {error}")
+        else:
+            logger.info("✅ All runs completed successfully")
+
+        return self.stats
+
+    def _remove_hooks(self, quietly: bool = False) -> None:
+        """Remove the router hooks, if any were attached; with quietly, log a failure instead of raising."""
+        if self.capture is None:
+            return
+        try:
+            self.capture.cleanup()
+        except Exception:
+            if not quietly:
+                raise
+            logger.error("Removing the router hooks failed", exc_info=True)
+
+    def _collect(self) -> None:
+        """Load the model and datasets, then run the full passes and the determinism orderings."""
         self.load_model()
         datasets = dict(zip(("gsm8k", "mbpp"), self.load_datasets()))
 
@@ -494,26 +534,6 @@ class FullPipeline:
 
         # Final validation
         self._validate_pipeline_completion()
-
-        self.capture.cleanup()
-
-        logger.info("\n" + "=" * 60)
-        logger.info("PIPELINE EXECUTION SUMMARY")
-        logger.info("=" * 60)
-        logger.info(f"Full passes completed: {self.stats.full_passes_completed}/2")
-        logger.info(f"Determinism orderings completed: {self.stats.runs_completed}/{self.num_runs}")
-        logger.info(f"Prompts processed: {self.stats.total_prompts_processed}")
-        logger.info(f"Routing events captured: {self.stats.total_routing_events}")
-        logger.info(f"Errors: {len(self.stats.errors)}")
-
-        if self.stats.errors:
-            logger.error("Errors encountered:")
-            for error in self.stats.errors:
-                logger.error(f"  - {error}")
-        else:
-            logger.info("✅ All runs completed successfully")
-
-        return self.stats
 
     def _run_pass(self, **pass_args) -> bool:
         """Run one pass, add its counts to the stats, and report whether it succeeded."""

@@ -295,3 +295,46 @@ def test_reference_row_converter_rejects_invalid_rows():
 
     with pytest.raises(ValueError, match="Invalid routing row"):
         pipeline._convert_to_parquet_rows([prompt], "gsm8k")
+
+
+def count_forward_hooks(model):
+    return sum(len(module._forward_hooks) for module in model.modules())
+
+
+def test_hooks_are_removed_when_dataset_loading_fails():
+    """Waleed's #59 review: a failure after hooks are attached must not leave them on the model."""
+    import pytest
+
+    pipeline = FullPipeline()
+    model = make_toy_qwen()
+
+    def load_model():
+        pipeline.capture = make_capture(model)  # attaches one hook per layer
+
+    def load_datasets():
+        raise ConnectionError("dataset download failed")
+
+    pipeline.load_model, pipeline.load_datasets = load_model, load_datasets
+
+    with pytest.raises(ConnectionError, match="dataset download failed"):
+        pipeline.run_collection()
+    assert count_forward_hooks(model) == 0
+
+
+def test_a_cleanup_failure_does_not_hide_the_original_error():
+    import pytest
+
+    pipeline = FullPipeline()
+
+    def load_model():
+        def broken_cleanup():
+            raise RuntimeError("cleanup failed")
+        pipeline.capture = SimpleNamespace(cleanup=broken_cleanup)
+
+    def load_datasets():
+        raise ConnectionError("dataset download failed")
+
+    pipeline.load_model, pipeline.load_datasets = load_model, load_datasets
+
+    with pytest.raises(ConnectionError, match="dataset download failed"):
+        pipeline.run_collection()
