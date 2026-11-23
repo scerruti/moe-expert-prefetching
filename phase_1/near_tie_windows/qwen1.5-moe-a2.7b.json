@@ -1,0 +1,55 @@
+{
+  "model": "qwen1.5-moe-a2.7b",
+  "experts_per_token": 4,
+  "window": 0.001051090657711029,
+  "largest_root_gap": 0.000350363552570343,
+  "root_changes": 3429,
+  "required_root_changes": 99,
+  "target_rate": 0.01,
+  "margin": 3.0,
+  "comparison": "ordering 0 against each other ordering",
+  "pilot": "phase_1_trial_38ef1da",
+  "pilot_files": [
+    {
+      "file": "run_0_gsm8k.parquet",
+      "sha256": "a4bddec98bdcc9f6e3d766569ecde8e691d83cee1792ceb18a9b9ac81cf1b89f"
+    },
+    {
+      "file": "run_1_gsm8k.parquet",
+      "sha256": "dcf3057f42adae99260d7a80c0a64a5376cc43f983321bb8098d8e62c6da862a"
+    },
+    {
+      "file": "run_2_gsm8k.parquet",
+      "sha256": "c75d2c6bc5f5b358666e9b25e49b365b8896667e138b599ae8070b96f9c89fce"
+    },
+    {
+      "file": "run_3_gsm8k.parquet",
+      "sha256": "b04d3a4f02ea057c315c630d5583fde585e8e86c2a8a80357a19ad02fa12f071"
+    },
+    {
+      "file": "run_4_gsm8k.parquet",
+      "sha256": "8c2c87568a40e01fc467da511c4462af4b651e7f1d525b08f25e8277995af508"
+    },
+    {
+      "file": "run_0_mbpp.parquet",
+      "sha256": "dc6475ba44fcf56177f571e112ad9cfe359da7f3765177076c399d488165307f"
+    },
+    {
+      "file": "run_1_mbpp.parquet",
+      "sha256": "226dac8e5ca92e95f1115c67c0ef474a12f490e7e4f30134b100c302b2158a2c"
+    },
+    {
+      "file": "run_2_mbpp.parquet",
+      "sha256": "ea928971dd0075a5e36201094aaa2991729b771e0a8f8e5791ff71034caf2319"
+    },
+    {
+      "file": "run_3_mbpp.parquet",
+      "sha256": "8fa222095a2bcc8f113f327d07726526be0c074e950af245a7b85178845ca6a3"
+    },
+    {
+      "file": "run_4_mbpp.parquet",
+      "sha256": "8113d3ec35a6414d2c956387202debb38d980ed82b693482a8d532a1351e7e0c"
+    }
+  ],
+  "note": "Computed from the trial collection at 38ef1da as the pilot. The trial predates the position_ids fix; the official collection uses this window unless its settings differ, in which case a new pilot recomputes it (phase_1/docs/determinism_check.md)."
+}
