@@ -1,6 +1,6 @@
 # Determinism check: what it requires and why
 
-**Status:** decided November 2026. Implementation pending in #60. Discussion: #114, #105, #128.
+**Status:** decided November 2026. Implemented in #60 (`phase_1/scripts/determinism_validation.py`), pending review. Discussion: #114, #105, #128.
 
 ## The problem
 
@@ -9,11 +9,13 @@ Phase 1 records which experts the router picks for every token at every layer. O
 ## Decisions
 
 1. **Accept the batch differences.** Taylor's view: this is a common problem in ML research and not a concern. We document it, and we don't collect an extra run with one prompt at a time.
-2. **Same batch, same result.** Running an identical batch twice must give bitwise-identical routing. This is already shown (#114).
+2. **Same batch, same result.** Running an identical batch twice must give bitwise-identical routing. This is already shown (#114). For the official collection, ordering 0 is run a second time (`repeat_run_0_<dataset>.parquet`). Without that repeat, the check reports "not run", never "passed", and the validation report is "incomplete".
 3. **Drop the 0.01 rule.** Real runs break it for legitimate reasons.
 4. **Keep a near-tie check across batch orders, as a diagnostic.** For each **root change** (defined below), the gap between the router's kth and (k+1)th experts must be within the model's **near-tie window**, where k is the model's number of experts per token (k = 4 for Qwen1.5). Use the smaller of the two orderings' gaps. A root change outside the window is a **warning** to investigate, not proof of a bug.
 5. **The window is computed for each model** by a fixed procedure (below), implemented in #60. Nobody picks the number.
 6. **Report the change statistics with every result:** how many decisions changed, how many were root changes, and their gaps.
+7. **Compare ordering 0 with each other ordering,** not every pair of orderings (see "Which comparisons" below).
+8. **A decision has changed when the router selected a different set of experts,** read from the recorded `selected_experts`, not recomputed from the probabilities (see "Which comparisons" below).
 
 ## Root changes
 
@@ -60,7 +62,13 @@ Checking every change, or every first change, would raise warnings for legitimat
 
 **Where 3 comes from.** The pilot uses different prompts from the real collection and may miss the rarest near-ties. A 3× margin covers that, while staying far below the gaps of real errors. It's a project-wide choice, set once and not tuned per model.
 
-**Qwen1.5's window.** Using the trial collection as its pilot: 3,429 root changes (well above 99), largest gap 0.00035036, so the window is **3 × 0.00035 ≈ 0.00105**. This was computed by hand, with a throwaway analysis script; #60 adds the code that computes it, and a test that reproduces these figures from the trial data. It applies to the official Phase 1 collection. If the official collection's settings differ from the trial's (for example after the transformers upgrade, #124), a new pilot recomputes it.
+**Qwen1.5's window.** Using the trial collection as its pilot: 3,429 root changes (well above 99), largest gap 0.00035036, so the window is **3 × 0.00035 ≈ 0.00105**. It's recorded in `phase_1/near_tie_windows/qwen1.5-moe-a2.7b.json` with a fingerprint of each pilot file. #60's validator and a separate reference script both reproduce these figures from the trial data. It applies to the official Phase 1 collection. If the official collection's settings differ from the trial's (for example after the transformers upgrade, #124), a new pilot recomputes it.
+
+## Which comparisons
+
+**Ordering 0 against each other ordering.** With five orderings, that's four comparisons per dataset. Comparing every pair would give ten, using all the evidence, but it counts the same rounding event more than once: a decision that flipped in ordering 2 shows up again in the comparisons of ordering 2 with 1, 3 and 4. Counts and gaps from overlapping comparisons aren't independent, which would undermine the 1-in-(n + 1) reasoning behind the 99. One reference ordering keeps each comparison a fresh look at the same baseline, and it's simpler to explain. The trial figures were computed this way.
+
+**Changes are read from the router's recorded choice,** `selected_experts`, not recomputed by sorting `expert_probs`. On an exact tie, which happens here (#114), sorting picks a winner by expert number, while the recorded choice is what the model actually did. Only the recorded choice says which way a tie went. On the trial data the two give the same figures.
 
 ## Limitations
 
@@ -78,4 +86,4 @@ Checking every change, or every first change, would raise warnings for legitimat
 - #128: Waleed's review, which found the cross-token knock-ons and the depth effect.
 - `phase_1/docs/experiments/k_scaling.md` (branch `experiment/k-scaling`): the near-tie table and gap definitions.
 - #124: the transformers 5.23 pre-test, where changes across versions match batch-order changes (about 2%).
-- The root-change figures above come from `data/phase_1_trial_38ef1da/determinism`, comparing every pair of orderings. They were computed by hand; until #60 lands, they can't yet be reproduced from code in the repo.
+- The root-change figures above come from `data/phase_1_trial_38ef1da/determinism`, comparing ordering 0 with each other ordering and reading changes from `selected_experts`. An earlier version of this document said "every pair of orderings"; that was wrong, and the figures were always from ordering 0 against the others. #60's validator and its separate reference script reproduce them (`test_trial_window.py`).
