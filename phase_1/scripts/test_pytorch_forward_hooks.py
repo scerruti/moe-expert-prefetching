@@ -5,7 +5,7 @@ Validates all acceptance criteria:
 - Hooks fire on all 32 layers
 - Pre-softmax logits are captured
 - Post-softmax probabilities are computed
-- Top-2 indices are extracted
+- Top-k (Qwen: 4) indices are extracted
 - No blocking in hook execution (non-blocking async collection)
 - Test validates hook outputs
 """
@@ -13,9 +13,10 @@ Validates all acceptance criteria:
 import time
 import torch
 import pytest
-from transformers import MixtralConfig, MixtralForCausalLM
+from transformers import AutoConfig, AutoModelForCausalLM
 
 from pytorch_forward_hooks import (
+    QWEN_TOP_K,
     RoutingDataBuffer,
     create_router_hook,
     register_router_hooks,
@@ -79,17 +80,20 @@ class TestRouterHooks:
 
     @pytest.fixture
     def toy_model(self):
-        """Create a minimal Mixtral model for testing."""
-        config = MixtralConfig(
-            num_hidden_layers=4,
-            hidden_size=32,
-            intermediate_size=64,
-            num_attention_heads=4,
-            num_key_value_heads=2,
-            num_local_experts=8,
-            num_experts_per_tok=2
-        )
-        return MixtralForCausalLM(config)
+        """Create a minimal Qwen2MoE model for testing (Phase 1 architecture)."""
+        # Load Qwen1.5-MoE config and create a tiny version for testing
+        config = AutoConfig.from_pretrained("Qwen/Qwen1.5-MoE-A2.7B-Chat")
+        # Shrink to toy size - keep attention head proportions consistent
+        config.num_hidden_layers = 2
+        config.hidden_size = 64
+        config.intermediate_size = 256
+        config.num_attention_heads = 4
+        if hasattr(config, 'num_key_value_heads'):
+            config.num_key_value_heads = 2
+        # MoE config
+        config.num_experts = 8
+        config.num_experts_per_tok = QWEN_TOP_K
+        return AutoModelForCausalLM.from_config(config)
 
     def test_hooks_fire_on_all_layers(self, toy_model):
         """AC: Hooks fire on all 32 layers (test with 4-layer toy model)."""
@@ -136,7 +140,7 @@ class TestRouterHooks:
         for data in collected:
             logits = data['logits']
             # Logits are flattened: [batch_size * seq_len, num_experts]
-            assert logits.shape == (batch_size * seq_len, config.num_local_experts)
+            assert logits.shape == (batch_size * seq_len, config.num_experts)
             # Logits should NOT be normalized (sum to num_experts, not 1)
             sums = logits.sum(dim=-1)
             assert not torch.allclose(sums, torch.ones_like(sums))
@@ -162,7 +166,7 @@ class TestRouterHooks:
         # Verify probabilities are normalized (sum to 1)
         for data in collected:
             probs = data['probabilities']
-            assert probs.shape == (batch_size * seq_len, config.num_local_experts)
+            assert probs.shape == (batch_size * seq_len, config.num_experts)
             sums = probs.sum(dim=-1)
             assert torch.allclose(sums, torch.ones_like(sums), atol=1e-5)
             # Verify all values in [0, 1]
@@ -171,8 +175,8 @@ class TestRouterHooks:
         for handle in handles:
             handle.remove()
 
-    def test_top2_indices_extracted(self, toy_model):
-        """AC: Top-2 expert indices are extracted."""
+    def test_topk_indices_extracted(self, toy_model):
+        """AC: Qwen's top-4 expert indices are extracted (#100)."""
         config = toy_model.config
         data_buffer = RoutingDataBuffer()
 
@@ -186,13 +190,13 @@ class TestRouterHooks:
 
         collected = data_buffer.get_all()
 
-        # Verify top-2 indices shape and validity
+        # Verify top-k indices shape and validity
         for data in collected:
-            top2 = data['top2_indices']
-            # Indices are flattened: [batch_size * seq_len, 2]
-            assert top2.shape == (batch_size * seq_len, 2)
+            topk = data['topk_indices']
+            # Indices are flattened: [batch_size * seq_len, num_experts_per_tok]
+            assert topk.shape == (batch_size * seq_len, QWEN_TOP_K)
             # Indices should be in valid range [0, num_experts)
-            assert (top2 >= 0).all() and (top2 < config.num_local_experts).all()
+            assert (topk >= 0).all() and (topk < config.num_experts).all()
 
         for handle in handles:
             handle.remove()
@@ -248,11 +252,11 @@ class TestRouterHooks:
             assert 'layer_idx' in data
             assert 'logits' in data
             assert 'probabilities' in data
-            assert 'top2_indices' in data
+            assert 'topk_indices' in data
             assert isinstance(data['layer_idx'], int)
             assert isinstance(data['logits'], torch.Tensor)
             assert isinstance(data['probabilities'], torch.Tensor)
-            assert isinstance(data['top2_indices'], torch.Tensor)
+            assert isinstance(data['topk_indices'], torch.Tensor)
 
         for handle in handles:
             handle.remove()
@@ -283,6 +287,36 @@ class TestRouterHooks:
 
         for handle in handles:
             handle.remove()
+
+    def test_hook_error_stops_the_forward_pass(self, toy_model, caplog):
+        """A failing hook must stop the run, not let it finish with a layer missing (#97)."""
+
+        class FailingBuffer(RoutingDataBuffer):
+            def add(self, layer_idx, *args):
+                raise RuntimeError("buffer full")
+
+        handles = register_router_hooks(toy_model, FailingBuffer())
+        input_ids = torch.randint(0, toy_model.config.vocab_size, (2, 10))
+        try:
+            with pytest.raises(RuntimeError, match="buffer full"), torch.no_grad():
+                toy_model(input_ids)
+        finally:
+            for handle in handles:
+                handle.remove()
+        assert "Hook error at layer 0" in caplog.text
+
+    @pytest.mark.parametrize("top_k", [2, 8])
+    def test_model_that_does_not_route_top_4_is_refused(self, toy_model, top_k):
+        """Phase 1 is locked to Qwen's top-4 (#100): another k must fail before any hook is registered."""
+        toy_model.config.num_experts_per_tok = top_k
+        with pytest.raises(ValueError, match=f"routes top-{top_k}"):
+            register_router_hooks(toy_model, RoutingDataBuffer())
+        assert all(not layer.mlp.gate._forward_hooks for layer in toy_model.model.layers)
+
+    def test_hook_rejects_a_gate_that_does_not_return_logits(self):
+        hook = create_router_hook(0, RoutingDataBuffer())
+        with pytest.raises(TypeError, match="tensor of logits"):
+            hook(None, None, (torch.randn(4, 8), torch.randn(4, 8)))
 
 
 if __name__ == "__main__":
