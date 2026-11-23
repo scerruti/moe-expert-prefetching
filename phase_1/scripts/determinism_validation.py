@@ -2,27 +2,36 @@
 """
 Determinism and consistency validation (Issue #8).
 
-Validates Phase 1 routing data quality and consistency (#105):
-- Determinism: the same prompts in different randomized orderings (the
-  determinism/ subset runs) give the same expert probabilities, within a
-  tolerance. Orderings change batch composition and padding, so fp16
-  results needn't be bitwise equal; the exact-equality count is reported
-  separately.
-- Randomization consistency: top-k selections agree across orderings;
-  a change is accepted only at a near-tie between the k-th and
-  (k+1)-th expert.
-- Data quality: no NaN/inf, probabilities sum to 1.0, valid indices
-- Expert activation: frequency per layer (from full/ when present)
+Implements the check decided in phase_1/docs/determinism_check.md (#128):
+
+- Same-batch check: an identical batch run twice must give bitwise-identical
+  routing. Needs a repeated ordering (repeat_run_0_<dataset>.parquet); without
+  one the check reports "not run", never "passed".
+- Near-tie check across batch orders: ordering 0 is compared with each other
+  ordering. A decision has changed when the router selected a different set of
+  experts. A change is a root change when nothing changed at a lower layer on
+  the same or an earlier token of the same sequence; every other change is a
+  knock-on. Each root change's gap (the k-th minus the (k+1)-th expert's
+  probability, the smaller of the two orderings') is compared with the model's
+  near-tie window. Root changes outside it are warnings to investigate, not
+  failures; knock-ons are reported, never judged.
+- The window is computed from a pilot run (compute_window), never chosen.
+- Data quality: no NaN/inf, probabilities sum to 1.0, valid indices.
+- Expert activation: frequency per layer (from full/ when present).
 
 Runs are compared on (sequence_id, token_position, layer_index) with a
-vectorised join; missing or duplicated rows fail the check.
+vectorised join; missing or duplicated rows are problems that fail the check.
 """
 
 import json
+import hashlib
+import json
 import logging
+import math
+import re
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -33,9 +42,24 @@ import pyarrow.parquet as pq
 logger = logging.getLogger(__name__)
 
 KEY_COLUMNS = ["sequence_id", "token_position", "layer_index"]
-# Max |probability difference| between orderings. fp16 noise across batch
-# shapes is far smaller; a real routing change is far larger.
-DEFAULT_ATOL = 1e-2
+ORDERING_FILE = re.compile(r"^run_(\d+)_(\w+)\.parquet$")
+REPEAT_FILE = re.compile(r"^repeat_run_0_(\w+)\.parquet$")
+COMPARISON = "ordering 0 against each other ordering"
+
+# Project-wide constants for computing a model's near-tie window
+# (phase_1/docs/determinism_check.md): a 1% target rate and a 3x margin.
+TARGET_RATE = 0.01
+MARGIN = 3.0
+
+
+class InsufficientPilotError(ValueError):
+    """The pilot has too few root changes to compute a window."""
+
+
+def required_root_changes(target_rate: float) -> int:
+    """Root changes a pilot needs so that a new one exceeds the pilot's largest
+    with probability about 1/(n+1) <= target_rate: n >= 1/target_rate - 1."""
+    return math.ceil(1 / target_rate) - 1
 
 
 def _json_builtin(value: Any) -> Any:
@@ -56,29 +80,32 @@ def _json_keys(value: Any) -> Any:
     return value
 
 
+# ---------- results ----------
+
 @dataclass
-class DeterminismCheckResult:
-    """Result of determinism validation across orderings."""
-    passed: bool = False
-    identical_probabilities: int = 0  # rows whose probabilities are exactly (bitwise) equal
-    total_comparisons: int = 0
-    max_deviation: float = 0.0
-    tolerance: float = DEFAULT_ATOL
-    exceeding_tolerance: int = 0  # rows with a probability difference above tolerance
-    missing_rows: int = 0  # rows present in one ordering but not the other
-    notes: List[str] = field(default_factory=list)
+class SameBatchCheckResult:
+    """An identical batch run twice must give bitwise-identical routing."""
+    status: str = "not_run"  # "passed", "failed" or "not_run"
+    reason: str = ""
+    compared_rows: int = 0
+    differing_rows: int = 0
+    problems: List[str] = field(default_factory=list)
 
 
 @dataclass
-class RandomizationCheckResult:
-    """Result of randomization consistency validation."""
-    passed: bool = False
-    matching_top_k: int = 0
-    total_shared_tokens: int = 0
-    match_percentage: float = 0.0
-    near_tie_flips: int = 0  # top-k changed, at a near-tie (accepted)
-    unexplained_changes: int = 0  # top-k changed without a near-tie (fails)
-    notes: List[str] = field(default_factory=list)
+class NearTieCheckResult:
+    """Cross-batch changes, with root changes checked against the near-tie window."""
+    status: str = "not_run"  # "ran", "failed" (a data problem) or "not_run"
+    reason: str = ""
+    window: Optional[float] = None
+    comparison: str = COMPARISON
+    compared_decisions: int = 0
+    changed_decisions: int = 0
+    root_changes: int = 0
+    knock_ons: int = 0
+    largest_root_gap: Optional[float] = None
+    outside_window: List[Dict[str, Any]] = field(default_factory=list)  # warnings, not failures
+    problems: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -109,13 +136,16 @@ class ValidationReport:
     """Complete validation report."""
     model: str
     dataset: str
-    determinism: DeterminismCheckResult = field(default_factory=DeterminismCheckResult)
-    randomization: RandomizationCheckResult = field(default_factory=RandomizationCheckResult)
+    same_batch: SameBatchCheckResult = field(default_factory=SameBatchCheckResult)
+    near_tie: NearTieCheckResult = field(default_factory=NearTieCheckResult)
     data_quality: DataQualityCheckResult = field(default_factory=DataQualityCheckResult)
     expert_stats: List[ExpertActivationStats] = field(default_factory=list)
+    status: str = "failed"  # "passed", "incomplete" (a check couldn't run) or "failed"
     overall_passed: bool = False
     summary: str = ""
 
+
+# ---------- reading runs ----------
 
 def _list_lengths(column: pa.ChunkedArray) -> np.ndarray:
     lengths = pc.fill_null(pc.list_value_length(column), 0)
@@ -143,35 +173,171 @@ def _topk_boundary_gap(probs: np.ndarray, k: int) -> np.ndarray:
     return ranked[:, k - 1] - ranked[:, k]
 
 
+def _load_run(path: Path):
+    """Keys (with a row number), expert_probs and selected_experts of one run."""
+    table = pq.read_table(path, columns=KEY_COLUMNS + ["expert_probs", "selected_experts"])
+    keys = table.select(KEY_COLUMNS).to_pandas()
+    keys["row"] = np.arange(len(keys))
+    return keys, _list_matrix(table, "expert_probs"), _list_matrix(table, "selected_experts")
+
+
+def _align(path_a: Path, path_b: Path, problems: List[str]):
+    """Rows of two runs matched on their keys. Missing or duplicate rows are problems."""
+    keys_a, probs_a, sel_a = _load_run(path_a)
+    keys_b, probs_b, sel_b = _load_run(path_b)
+    for keys, path in ((keys_a, path_a), (keys_b, path_b)):
+        if keys.duplicated(KEY_COLUMNS).any():
+            problems.append(f"{path.name}: duplicate (sequence_id, position, layer) rows")
+    if probs_a.shape[1] != probs_b.shape[1] or sel_a.shape[1] != sel_b.shape[1]:
+        problems.append(f"{path_b.name}: row widths differ from {path_a.name}")
+        return None
+    merged = keys_a.merge(keys_b, on=KEY_COLUMNS, how="outer", suffixes=("_a", "_b"), indicator=True)
+    both = merged["_merge"] == "both"
+    missing = int((~both).sum())
+    if missing:
+        problems.append(f"{path_b.name}: {missing} rows not in both {path_a.name} and {path_b.name}")
+    merged = merged[both]
+    ia = merged["row_a"].to_numpy(dtype=np.int64)
+    ib = merged["row_b"].to_numpy(dtype=np.int64)
+    keys = merged[KEY_COLUMNS].reset_index(drop=True)
+    return keys, probs_a[ia], probs_b[ib], sel_a[ia], sel_b[ib]
+
+
+def _mark_roots(changes: pd.DataFrame) -> pd.Series:
+    """True for root changes: no change at a lower layer on the same or an earlier
+    token of the same sequence. Otherwise the change is a knock-on."""
+    if changes.empty:
+        return pd.Series([], dtype=bool, index=changes.index)
+    per_layer = (changes.groupby(["sequence_id", "layer_index"], sort=True)["token_position"]
+                 .min().rename("first_position").reset_index())
+    # Earliest changed position at any strictly lower layer of the same sequence.
+    per_layer["earliest_below"] = (per_layer.groupby("sequence_id")["first_position"]
+                                   .transform(lambda s: s.cummin().shift(1)))
+    below = changes.merge(per_layer[["sequence_id", "layer_index", "earliest_below"]],
+                          on=["sequence_id", "layer_index"], how="left")["earliest_below"].to_numpy()
+    positions = changes["token_position"].to_numpy()
+    return pd.Series(np.isnan(below) | (positions < below), index=changes.index)
+
+
+@dataclass
+class OrderingComparison:
+    """The changed decisions between two orderings, each with its gap and root flag."""
+    changes: pd.DataFrame
+    compared: int
+    k: int
+    problems: List[str]
+
+
+def compare_orderings(path_a: Path, path_b: Path) -> OrderingComparison:
+    """Compare two orderings of the same prompts.
+
+    A decision has changed when the router selected a different set of experts
+    (from selected_experts, so an exact tie shows which way it went). Its gap is
+    the k-th minus the (k+1)-th expert's probability, the smaller of the two
+    orderings' gaps, where k is the number of experts selected per token."""
+    problems: List[str] = []
+    aligned = _align(Path(path_a), Path(path_b), problems)
+    if aligned is None:
+        empty = pd.DataFrame(columns=KEY_COLUMNS + ["gap", "is_root"])
+        return OrderingComparison(empty, 0, 0, problems)
+    keys, probs_a, probs_b, sel_a, sel_b = aligned
+    k = sel_a.shape[1]
+    changed = (np.sort(sel_a, axis=1) != np.sort(sel_b, axis=1)).any(axis=1)
+    gap = np.minimum(_topk_boundary_gap(probs_a.astype(np.float64), k),
+                     _topk_boundary_gap(probs_b.astype(np.float64), k))
+    changes = keys[changed].assign(gap=gap[changed]).reset_index(drop=True)
+    changes["is_root"] = _mark_roots(changes)
+    return OrderingComparison(changes, len(keys), k, problems)
+
+
+def _orderings(folder: Path) -> Dict[str, List[Path]]:
+    """Each dataset's ordering files, ordering 0 first. Uses determinism/ if present."""
+    folder = Path(folder)
+    if (folder / "determinism").is_dir():
+        folder = folder / "determinism"
+    found: Dict[str, List[tuple]] = {}
+    for path in folder.glob("*.parquet"):
+        m = ORDERING_FILE.match(path.name)
+        if m:
+            found.setdefault(m.group(2), []).append((int(m.group(1)), path))
+    return {ds: [p for _, p in sorted(runs)] for ds, runs in sorted(found.items())}
+
+
+def _fingerprint(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def compute_window(pilot_dir: Path, target_rate: float = TARGET_RATE, margin: float = MARGIN,
+                   model: str = "qwen1.5-moe-a2.7b") -> Dict[str, Any]:
+    """The near-tie window for a model, from a pilot run with the real collection's settings.
+
+    Window = margin x the largest root-change gap, comparing ordering 0 with each
+    other ordering. Refuses a pilot with fewer than required_root_changes(target_rate)
+    root changes. Returns the record to save with the model's settings."""
+    pilot_dir = Path(pilot_dir)
+    runs = _orderings(pilot_dir)
+    if not runs:
+        raise InsufficientPilotError(f"{pilot_dir}: no run_<n>_<dataset>.parquet orderings")
+    gaps, k, files = [], None, []
+    for dataset, paths in runs.items():
+        if len(paths) < 2:
+            raise InsufficientPilotError(f"{dataset}: {len(paths)} ordering; at least 2 are needed")
+        for other in paths[1:]:
+            result = compare_orderings(paths[0], other)
+            if result.problems:
+                raise ValueError(f"pilot data problems: {result.problems}")
+            k = result.k
+            gaps.extend(result.changes.loc[result.changes.is_root, "gap"].tolist())
+        files.extend(paths)
+    required = required_root_changes(target_rate)
+    if len(gaps) < required:
+        raise InsufficientPilotError(
+            f"{pilot_dir}: {len(gaps)} root changes; at least {required} are needed for a "
+            f"{target_rate:.0%} target rate. Add pilot prompts or orderings.")
+    largest = float(max(gaps))
+    return {
+        "model": model,
+        "experts_per_token": k,
+        "window": margin * largest,
+        "largest_root_gap": largest,
+        "root_changes": len(gaps),
+        "required_root_changes": required,
+        "target_rate": target_rate,
+        "margin": margin,
+        "comparison": COMPARISON,
+        "pilot": pilot_dir.name,
+        "pilot_files": [{"file": p.name, "sha256": _fingerprint(p)} for p in files],
+    }
+
+
+# ---------- the validator ----------
+
 class DeterminismValidator:
     """Validate determinism and consistency of routing data."""
 
-    def __init__(self, parquet_dir: Path, atol: float = DEFAULT_ATOL):
+    def __init__(self, parquet_dir: Path, window: Union[None, Dict[str, Any], Path, str] = None):
         """
-        Initialize validator with parquet files.
-
         Args:
-            parquet_dir: A collection output directory (with full/ and
-                determinism/ subdirectories) or a flat directory of run files
-            atol: Max probability difference accepted between orderings
+            parquet_dir: A collection output directory (with full/ and determinism/
+                subdirectories) or a flat directory of run files.
+            window: The model's near-tie window record (a dict, or a JSON file
+                written from compute_window). Without one, the near-tie check
+                reports "not run".
         """
         self.parquet_dir = Path(parquet_dir)
         self.parquet_files = sorted(self.parquet_dir.rglob("*.parquet"))
-        self.atol = atol
-        self._comparison: Optional[Tuple[DeterminismCheckResult, RandomizationCheckResult]] = None
+        if isinstance(window, (str, Path)):
+            window = json.loads(Path(window).read_text())
+        self.window = window
         logger.info(f"Found {len(self.parquet_files)} parquet files")
 
     def _files_in(self, subdir: str) -> List[Path]:
         """Files in the named subdirectory if there are any, else all files."""
         return [f for f in self.parquet_files if f.parent.name == subdir] or self.parquet_files
-
-    def _runs_by_dataset(self) -> Dict[str, List[Path]]:
-        runs = {}
-        for dataset in ("gsm8k", "mbpp"):
-            files = [f for f in self._files_in("determinism") if dataset in f.name]
-            if files:
-                runs[dataset] = files
-        return runs
 
     def validate_all(self) -> ValidationReport:
         """Run all validation checks."""
@@ -179,35 +345,19 @@ class DeterminismValidator:
         logger.info("DETERMINISM & CONSISTENCY VALIDATION")
         logger.info("=" * 60)
 
-        # Determine dataset and model from files
-        dataset = self._infer_dataset()
-        model = self._infer_model()
-
-        report = ValidationReport(model=model, dataset=dataset)
-
-        # Run all checks
-        logger.info("\n1. Data Quality Check...")
+        report = ValidationReport(model=self._infer_model(), dataset=self._infer_dataset())
         report.data_quality = self.check_data_quality()
-
         if report.data_quality.passed:
-            logger.info("\n2. Determinism Check...")
-            report.determinism = self.check_determinism()
-
-            logger.info("\n3. Randomization Consistency Check...")
-            report.randomization = self.check_randomization_consistency()
-
-            logger.info("\n4. Expert Activation Analysis...")
+            report.same_batch = self.check_same_batch()
+            report.near_tie = self.check_near_tie()
             report.expert_stats = self.analyze_expert_activation()
 
-        # Overall pass/fail
-        report.overall_passed = (
-            report.data_quality.passed and
-            report.determinism.passed and
-            report.randomization.passed
-        )
-
+        failed = (not report.data_quality.passed or report.same_batch.status == "failed"
+                  or report.near_tie.status == "failed")
+        not_run = report.same_batch.status == "not_run" or report.near_tie.status == "not_run"
+        report.status = "failed" if failed else ("incomplete" if not_run else "passed")
+        report.overall_passed = report.status == "passed"
         report.summary = self._generate_summary(report)
-
         return report
 
     def check_data_quality(self) -> DataQualityCheckResult:
@@ -266,120 +416,78 @@ class DeterminismValidator:
 
         return result
 
-    def _load_run(self, path: Path) -> Tuple[pd.DataFrame, np.ndarray, np.ndarray]:
-        """Keys (with a row number), expert_probs and selected_experts of one run."""
-        table = pq.read_table(path, columns=KEY_COLUMNS + ["expert_probs", "selected_experts"])
-        keys = table.select(KEY_COLUMNS).to_pandas()
-        keys["row"] = np.arange(len(keys))
-        return keys, _list_matrix(table, "expert_probs"), _list_matrix(table, "selected_experts")
-
-    def _compare_runs(self) -> Tuple[DeterminismCheckResult, RandomizationCheckResult]:
-        """Compare every ordering of each dataset with its first ordering (computed once)."""
-        if self._comparison is not None:
-            return self._comparison
-
-        det = DeterminismCheckResult(tolerance=self.atol)
-        rnd = RandomizationCheckResult()
-        problems = []
-
-        runs = self._runs_by_dataset()
-        if not runs:
-            problems.append("No GSM8K or MBPP run files to compare")
-        for dataset, files in runs.items():
-            if len(files) < 2:
-                problems.append(f"{dataset}: {len(files)} run, at least 2 orderings are needed")
+    def check_same_batch(self) -> SameBatchCheckResult:
+        """Ordering 0 run twice with an identical batch must match bitwise."""
+        result = SameBatchCheckResult()
+        runs = _orderings(self.parquet_dir)
+        folder = self.parquet_dir / "determinism" if (self.parquet_dir / "determinism").is_dir() else self.parquet_dir
+        repeats = {REPEAT_FILE.match(p.name).group(1): p for p in folder.glob("*.parquet")
+                   if REPEAT_FILE.match(p.name)}
+        if not repeats:
+            result.reason = ("no repeated ordering (repeat_run_0_<dataset>.parquet) in the collection, "
+                             "so identical batches couldn't be compared")
+            logger.warning(f"Same-batch check NOT RUN: {result.reason}")
+            return result
+        for dataset, repeat in sorted(repeats.items()):
+            if dataset not in runs:
+                result.problems.append(f"{repeat.name}: no run_0_{dataset}.parquet to compare with")
                 continue
-            try:
-                ref_keys, ref_probs, ref_selected = self._load_run(files[0])
-                if ref_keys.duplicated(KEY_COLUMNS).any():
-                    problems.append(f"{files[0].name}: duplicate (sequence_id, position, layer) rows")
-                for other in files[1:]:
-                    keys, probs, selected = self._load_run(other)
-                    if keys.duplicated(KEY_COLUMNS).any():
-                        problems.append(f"{other.name}: duplicate (sequence_id, position, layer) rows")
-                    if probs.shape[1] != ref_probs.shape[1] or selected.shape[1] != ref_selected.shape[1]:
-                        problems.append(f"{other.name}: row widths differ from {files[0].name}")
-                        continue
-
-                    merged = ref_keys.merge(keys, on=KEY_COLUMNS, how="outer",
-                                            suffixes=("_a", "_b"), indicator=True)
-                    both = merged["_merge"] == "both"
-                    missing = int((~both).sum())
-                    if missing:
-                        det.missing_rows += missing
-                        problems.append(f"{other.name}: {missing} rows not in both {files[0].name} and {other.name}")
-
-                    ia = merged.loc[both, "row_a"].to_numpy(dtype=np.int64)
-                    ib = merged.loc[both, "row_b"].to_numpy(dtype=np.int64)
-                    pa_, pb_ = ref_probs[ia].astype(np.float64), probs[ib].astype(np.float64)
-
-                    deviation = np.abs(pa_ - pb_).max(axis=1) if pa_.size else np.zeros(len(ia))
-                    det.total_comparisons += len(ia)
-                    det.identical_probabilities += int((ref_probs[ia] == probs[ib]).all(axis=1).sum())
-                    det.exceeding_tolerance += int((deviation > self.atol).sum())
-                    if len(deviation):
-                        det.max_deviation = max(det.max_deviation, float(deviation.max()))
-
-                    same = (np.sort(ref_selected[ia], axis=1) == np.sort(selected[ib], axis=1)).all(axis=1)
-                    k = ref_selected.shape[1]
-                    near_tie = ((_topk_boundary_gap(pa_, k) <= 2 * self.atol) |
-                                (_topk_boundary_gap(pb_, k) <= 2 * self.atol))
-                    rnd.total_shared_tokens += len(ia)
-                    rnd.matching_top_k += int(same.sum())
-                    rnd.near_tie_flips += int((~same & near_tie).sum())
-                    rnd.unexplained_changes += int((~same & ~near_tie).sum())
-            except Exception as e:
-                problems.append(f"{dataset}: {e}")
-
-        det.notes.extend(problems)
-        rnd.notes.extend(problems)
-        compared = det.total_comparisons > 0
-        det.passed = compared and not problems and det.exceeding_tolerance == 0
-        rnd.passed = compared and not problems and rnd.unexplained_changes == 0
-        if rnd.total_shared_tokens:
-            rnd.match_percentage = 100.0 * rnd.matching_top_k / rnd.total_shared_tokens
-
-        self._comparison = (det, rnd)
-        return self._comparison
-
-    def check_determinism(self) -> DeterminismCheckResult:
-        """
-        Same prompts in different orderings give the same expert probabilities,
-        within self.atol. Fails on missing data, missing or duplicate rows,
-        or any row differing by more than the tolerance.
-        """
-        logger.info("Checking determinism...")
-        result = self._compare_runs()[0]
-        if result.passed:
-            logger.info(
-                f"✅ Determinism check PASSED ({result.total_comparisons} rows, "
-                f"max deviation {result.max_deviation:.2e} <= {result.tolerance:.0e}; "
-                f"{result.identical_probabilities} bitwise identical)"
-            )
-        else:
-            logger.error(
-                f"❌ Determinism check FAILED: {result.exceeding_tolerance} rows above "
-                f"{result.tolerance:.0e}, max deviation {result.max_deviation:.2e}; {result.notes}"
-            )
+            aligned = _align(runs[dataset][0], repeat, result.problems)
+            if aligned is None:
+                continue
+            _, probs_a, probs_b, sel_a, sel_b = aligned
+            same = (probs_a == probs_b).all(axis=1) & (sel_a == sel_b).all(axis=1)
+            result.compared_rows += len(same)
+            result.differing_rows += int((~same).sum())
+        ok = not result.problems and result.differing_rows == 0 and result.compared_rows > 0
+        result.status = "passed" if ok else "failed"
+        log = logger.info if ok else logger.error
+        log(f"Same-batch check {result.status.upper()}: {result.differing_rows} of "
+            f"{result.compared_rows} rows differ; {result.problems}")
         return result
 
-    def check_randomization_consistency(self) -> RandomizationCheckResult:
-        """
-        Top-k selections agree across orderings. A change is accepted only at
-        a near-tie (k-th and (k+1)-th probabilities within 2 * atol).
-        """
-        logger.info("Checking randomization consistency...")
-        result = self._compare_runs()[1]
-        if result.passed:
-            logger.info(
-                f"✅ Randomization check PASSED ({result.match_percentage:.2f}% identical top-k, "
-                f"{result.near_tie_flips} near-tie flips)"
-            )
+    def check_near_tie(self) -> NearTieCheckResult:
+        """Root changes across batch orders, checked against the model's near-tie window.
+
+        Root changes outside the window are warnings to investigate, not failures.
+        Missing or duplicate rows, or too few orderings, fail the check."""
+        result = NearTieCheckResult()
+        if not self.window or "window" not in self.window:
+            result.reason = "no near-tie window record for this model (see compute_window)"
+            logger.warning(f"Near-tie check NOT RUN: {result.reason}")
+            return result
+        result.window = float(self.window["window"])
+        runs = _orderings(self.parquet_dir)
+        if not runs:
+            result.problems.append("no run_<n>_<dataset>.parquet orderings to compare")
+        root_gaps = []
+        for dataset, paths in runs.items():
+            if len(paths) < 2:
+                result.problems.append(f"{dataset}: {len(paths)} ordering; at least 2 are needed")
+                continue
+            for other in paths[1:]:
+                comparison = compare_orderings(paths[0], other)
+                result.problems.extend(comparison.problems)
+                changes = comparison.changes
+                result.compared_decisions += comparison.compared
+                result.changed_decisions += len(changes)
+                roots = changes[changes.is_root]
+                result.root_changes += len(roots)
+                result.knock_ons += len(changes) - len(roots)
+                root_gaps.extend(roots.gap.tolist())
+                for row in roots[roots.gap > result.window].itertuples(index=False):
+                    result.outside_window.append({
+                        "dataset": dataset, "ordering": other.name, "sequence_id": row.sequence_id,
+                        "token_position": int(row.token_position), "layer_index": int(row.layer_index),
+                        "gap": float(row.gap)})
+        result.largest_root_gap = float(max(root_gaps)) if root_gaps else None
+        result.status = "failed" if result.problems else "ran"
+        if result.problems:
+            logger.error(f"Near-tie check FAILED: {result.problems}")
         else:
-            logger.error(
-                f"❌ Randomization check FAILED: {result.unexplained_changes} top-k changes "
-                f"without a near-tie; {result.notes}"
-            )
+            logger.info(f"Near-tie check: {result.changed_decisions} of {result.compared_decisions} "
+                        f"decisions changed; {result.root_changes} root changes, {result.knock_ons} "
+                        f"knock-ons; {len(result.outside_window)} outside the window {result.window:.6f}")
         return result
 
     def analyze_expert_activation(self) -> List[ExpertActivationStats]:
@@ -425,63 +533,55 @@ class DeterminismValidator:
         return "mixed"
 
     def _infer_model(self) -> str:
-        """Infer model name from context."""
-        return "qwen1.5-moe-a2.7b"
+        """The model named in the window record, else the Phase 1 model."""
+        return (self.window or {}).get("model", "qwen1.5-moe-a2.7b")
 
     def _generate_summary(self, report: ValidationReport) -> str:
         """Generate human-readable summary."""
-        lines = []
-        lines.append(f"Model: {report.model}")
-        lines.append(f"Dataset: {report.dataset}")
+        lines = [f"Model: {report.model}", f"Dataset: {report.dataset}", ""]
+        dq = report.data_quality
+        lines.append(f"{'✅' if dq.passed else '❌'} Data quality: {'PASSED' if dq.passed else 'FAILED'} "
+                     f"({dq.total_rows} rows)")
+
+        sb = report.same_batch
+        mark = {"passed": "✅", "failed": "❌", "not_run": "⚠️ "}[sb.status]
+        detail = sb.reason if sb.status == "not_run" else f"{sb.differing_rows} of {sb.compared_rows} rows differ"
+        lines.append(f"{mark} Same-batch check: {sb.status.replace('_', ' ').upper()} ({detail})")
+
+        nt = report.near_tie
+        if nt.status == "not_run":
+            lines.append(f"⚠️  Near-tie check: NOT RUN ({nt.reason})")
+        else:
+            mark = "❌" if nt.status == "failed" else ("⚠️ " if nt.outside_window else "✅")
+            lines.append(
+                f"{mark} Near-tie check ({nt.comparison}; window {nt.window:.6f}): "
+                f"{nt.changed_decisions} of {nt.compared_decisions} decisions changed; "
+                f"{nt.root_changes} root changes, {nt.knock_ons} knock-ons; "
+                f"{len(nt.outside_window)} root changes outside the window (warnings to investigate)")
+        for problem in sb.problems + nt.problems:
+            lines.append(f"   - {problem}")
+
         lines.append("")
-
-        if report.data_quality.passed:
-            lines.append(f"✅ Data Quality: PASSED ({report.data_quality.total_rows} rows)")
-        else:
-            lines.append(f"❌ Data Quality: FAILED")
-
-        det = report.determinism
-        verdict = "✅ Determinism: PASSED" if det.passed else "❌ Determinism: FAILED"
-        lines.append(
-            f"{verdict} ({det.total_comparisons} rows; max deviation {det.max_deviation:.2e}, "
-            f"tolerance {det.tolerance:.0e}; {det.identical_probabilities} bitwise identical)"
-        )
-
-        rnd = report.randomization
-        verdict = "✅ Randomization: PASSED" if rnd.passed else "❌ Randomization: FAILED"
-        lines.append(
-            f"{verdict} ({rnd.match_percentage:.2f}% identical top-k; {rnd.near_tie_flips} "
-            f"near-tie flips; {rnd.unexplained_changes} unexplained changes)"
-        )
-        for note in det.notes:
-            lines.append(f"   - {note}")
-
-        if report.overall_passed:
-            lines.append("")
-            lines.append("🎉 ALL VALIDATION CHECKS PASSED")
-        else:
-            lines.append("")
-            lines.append("⚠️  VALIDATION FAILED - Review above results")
-
+        lines.append({"passed": "🎉 ALL VALIDATION CHECKS PASSED",
+                      "incomplete": "⚠️  INCOMPLETE - a check could not run (see above)",
+                      "failed": "⚠️  VALIDATION FAILED - Review above results"}[report.status])
         return "\n".join(lines)
 
     def save_report(self, report: ValidationReport, output_path: Path) -> None:
         """Save validation report to JSON."""
         output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Convert to dict for JSON serialization
         report_dict = {
             "model": report.model,
             "dataset": report.dataset,
-            "determinism": asdict(report.determinism),
-            "randomization": asdict(report.randomization),
+            "status": report.status,
+            "window_record": self.window,
+            "same_batch": asdict(report.same_batch),
+            "near_tie": asdict(report.near_tie),
             "data_quality": asdict(report.data_quality),
             "expert_stats": [asdict(s) for s in report.expert_stats],
             "overall_passed": report.overall_passed,
             "summary": report.summary,
         }
-
         with open(output_path, "w") as f:
             json.dump(_json_keys(report_dict), f, indent=2, default=_json_builtin)
-
         logger.info(f"✅ Report saved to {output_path}")

@@ -136,53 +136,18 @@ def test_data_quality_check_with_inf():
         logger.info(f"✅ Inf detection working ({result.inf_count} inf values found)")
 
 
-def test_determinism_check():
-    """Test determinism check on identical runs."""
-    logger.info("\n" + "=" * 60)
-    logger.info("Test: Determinism Check")
-    logger.info("=" * 60)
-
+def test_identical_orderings_have_no_changes():
+    """Two identical orderings: every decision compared, none changed, no warnings."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
-
-        # Create two identical runs
         create_test_parquet_file(tmpdir / "run_0_gsm8k.parquet", num_rows=50)
         create_test_parquet_file(tmpdir / "run_1_gsm8k.parquet", num_rows=50)
 
-        validator = DeterminismValidator(tmpdir)
-        result = validator.check_determinism()
+        result = DeterminismValidator(tmpdir, window={"window": 0.001}).check_near_tie()
 
-        assert result.passed
-        assert result.total_comparisons > 0
-        logger.info(
-            f"✅ Determinism check: {result.identical_probabilities}/{result.total_comparisons} match "
-            f"(max deviation: {result.max_deviation:.2e})"
-        )
-
-
-def test_randomization_consistency_check():
-    """Test randomization consistency check."""
-    logger.info("\n" + "=" * 60)
-    logger.info("Test: Randomization Consistency Check")
-    logger.info("=" * 60)
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmpdir = Path(tmpdir)
-
-        # Create multiple runs with same data
-        for run in range(3):
-            create_test_parquet_file(
-                tmpdir / f"run_{run}_gsm8k.parquet",
-                num_rows=50,
-            )
-
-        validator = DeterminismValidator(tmpdir)
-        result = validator.check_randomization_consistency()
-
-        logger.info(
-            f"✅ Randomization check: {result.matching_top_k}/{result.total_shared_tokens} match "
-            f"({result.match_percentage:.1f}%)"
-        )
+        assert result.status == "ran"
+        assert result.compared_decisions == 50
+        assert result.changed_decisions == 0 and result.outside_window == []
 
 
 def test_expert_activation_analysis():
