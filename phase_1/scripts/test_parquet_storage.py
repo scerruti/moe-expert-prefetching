@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pyarrow as pa
 import pyarrow.parquet as pq
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -147,6 +148,37 @@ class ParquetStorageTests(unittest.TestCase):
 
         with self.assertRaisesRegex(OSError, "CRC checksum"):
             verify_parquet(self.path, expected_rows=120)
+
+    def test_write_table_round_trip_and_flush_count(self):
+        """#106: tables count toward flush_every by prompt, like write_prompt."""
+        tables = [pa.Table.from_pylist(make_prompt_rows(i), schema=ROUTING_SCHEMA) for i in range(3)]
+        writer = RoutingParquetWriter(self.path, flush_every=2)
+        writer.write_table(tables[0], num_prompts=1)
+        self.assertEqual(writer.rows_written, 0)  # still buffered
+        writer.write_table(tables[1], num_prompts=1)
+        self.assertEqual(writer.rows_written, 12)  # flushed after 2 prompts
+        writer.write_table(tables[2], num_prompts=1)
+        writer.close()
+
+        self.assertEqual(writer.prompts_written, 3)
+        self.assertEqual(pq.read_table(self.path).to_pylist(),
+                         pa.concat_tables(tables).to_pylist())
+
+    def test_write_table_rejects_other_schemas(self):
+        table = pa.Table.from_pylist(make_prompt_rows(0), schema=ROUTING_SCHEMA).drop_columns(["token_str"])
+        with RoutingParquetWriter(self.path) as writer:
+            with self.assertRaises(ValueError):
+                writer.write_table(table, num_prompts=1)
+
+    def test_write_prompt_and_write_table_keep_write_order(self):
+        """#106: mixing the two methods keeps rows in the order they were written."""
+        with RoutingParquetWriter(self.path) as writer:
+            writer.write_prompt(make_prompt_rows(0))
+            writer.write_table(pa.Table.from_pylist(make_prompt_rows(1), schema=ROUTING_SCHEMA), num_prompts=1)
+            writer.write_prompt(make_prompt_rows(2))
+
+        ids = [row["sequence_id"] for row in pq.read_table(self.path).to_pylist()]
+        self.assertEqual(ids, ["gsm8k-0"] * 6 + ["gsm8k-1"] * 6 + ["gsm8k-2"] * 6)
 
     def test_invalid_flush_every(self):
         with self.assertRaises(ValueError):
