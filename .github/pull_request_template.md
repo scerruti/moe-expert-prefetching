@@ -22,9 +22,11 @@ How can this change fail, and what happens when it does? It must fail loudly, re
 |---|---|---|
 | <!-- e.g. the dataset fails to load partway --> | <!-- e.g. hooks removed, the original error raised --> | <!-- e.g. `test_collection_scope.py::test_hooks_are_removed_when_dataset_loading_fails` --> |
 
+<!-- No executable code changed (e.g. documentation only)? Write one row: "None: <reason>". -->
+
 ## Checklist
 
 - [ ] CPU tests pass in CI.
 - [ ] GPU tests (`pytest -m gpu`) ran on Colab at this PR's final commit, if this PR changes GPU code paths or dependencies (`requirements.txt` or a lock file).
-- [ ] At least one test forces a failure and checks what's left (CONTRIBUTING.md).
+- [ ] At least one test forces a failure and checks what's left (CONTRIBUTING.md), or not applicable because: <!-- reason, e.g. documentation only -->.
 - [ ] No test assertion was loosened to make it pass, or the reason is explained above (CONTRIBUTING.md).
