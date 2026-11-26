@@ -75,7 +75,7 @@ Code is usually designed and tested for when things go right. In Phase 1, review
    - *Example:* `a6d642a` (#59) removes the router hooks even when the collection fails partway. Before it, a failed dataset load left 2 hooks attached to the model.
 4. **Test the failure.** Every PR names its likely failure modes, and at least one test forces a failure and checks what's left: data, state, hooks, the error raised.
    - *Example:* `test_hooks_are_removed_when_dataset_loading_fails` forces the failure Waleed found and counts the hooks left. It fails on the code before `a6d642a`.
-   - A PR that changes no executable code, such as a documentation-only PR, marks this not applicable and says why. #136 did this.
+   - **Documentation-only PRs** mark this not applicable, and say so. Documentation only means the PR changes nothing but Markdown or other prose files. A change to code, tests, notebooks, CI workflows, dependency files (`requirements.txt`, lock files) or configuration (`pytest.ini`, `pyproject.toml`) isn't documentation only, even when no Python changes: those can fail too, and need a forced-failure test. #136 is an example of a documentation-only PR.
 
 **Deliberate exceptions** need their reason in the code, on the line. For example, cleanup that logs a second error so it doesn't hide the first one.
 
