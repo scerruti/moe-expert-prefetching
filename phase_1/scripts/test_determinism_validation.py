@@ -53,6 +53,7 @@ def create_test_parquet_file(
         if prob_sum > 0 and not include_nan and not include_inf:
             expert_probs = [p / prob_sum for p in expert_probs]
 
+        top4 = sorted(range(60), key=lambda e: (-expert_probs[e], e))[:4]
         rows.append({
             "sequence_id": f"seq_{i % 10}",
             "token_id": 100 + (i % 20),
@@ -60,8 +61,9 @@ def create_test_parquet_file(
             "token_position": i % 10,
             "layer_index": i % 24,
             "expert_probs": expert_probs[:60],
-            "selected_experts": [0, 3, 10, 15][:4],
-            "selected_probs": [0.4, 0.3, 0.2, 0.1][:4],
+            # The row's own top 4, as the router hook records them (#145)
+            "selected_experts": top4,
+            "selected_probs": [expert_probs[e] for e in top4],
             "dataset_source": dataset_name,
         })
 

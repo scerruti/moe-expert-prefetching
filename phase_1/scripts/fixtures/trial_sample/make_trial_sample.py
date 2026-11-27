@@ -3,7 +3,8 @@
 
 Rule: every 10th prompt (sequence_id in sorted order, starting with the first),
 keeping only the rows where some ordering's selected experts differ from
-ordering 0's. Rows where nothing changed can't affect which changes are root
+ordering 0's. Every column of the routing schema is kept, so the sample passes the
+same data-quality check as a real collection (#145). Rows where nothing changed can't affect which changes are root
 changes, and keeping whole prompts keeps every root change's causes in the sample.
 
 Usage: python make_trial_sample.py data/phase_1_trial_38ef1da/determinism
@@ -18,7 +19,6 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 KEY = ["sequence_id", "token_position", "layer_index"]
-COLUMNS = KEY + ["expert_probs", "selected_experts"]
 OUT = Path(__file__).resolve().parent / "determinism"
 
 
@@ -26,7 +26,7 @@ def main(source: Path) -> None:
     OUT.mkdir(exist_ok=True)
     for dataset in ("gsm8k", "mbpp"):
         runs = sorted(source.glob(f"run_*_{dataset}.parquet"), key=lambda p: int(p.name.split("_")[1]))
-        tables = [pq.read_table(r, columns=COLUMNS).sort_by([(k, "ascending") for k in KEY]) for r in runs]
+        tables = [pq.read_table(r).sort_by([(k, "ascending") for k in KEY]) for r in runs]
         sequences = sorted(set(tables[0].column("sequence_id").to_pylist()))
         keep_sequences = pa.array(sequences[::10])
         n = tables[0].num_rows
