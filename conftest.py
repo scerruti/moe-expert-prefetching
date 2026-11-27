@@ -2,7 +2,15 @@
 
 import pytest
 
-from dependency_versions import version_mismatches
+from run_settings import RunSettingsError, apply_run_settings
+
+# Before anything imports torch: Triton reads its settings when it starts (#133)
+try:
+    apply_run_settings()
+except RunSettingsError as error:
+    pytest.exit(str(error), returncode=pytest.ExitCode.USAGE_ERROR)
+
+from dependency_versions import version_mismatches  # noqa: E402
 
 
 @pytest.hookimpl(tryfirst=True)
