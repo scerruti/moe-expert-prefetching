@@ -71,6 +71,7 @@ class RoutingParquetWriter:
             write_page_checksum=True,
         )
         self._buffer: List[Dict[str, Any]] = []
+        self._tables: List[pa.Table] = []  # from write_table, kept in write order
         self._buffered_prompts = 0
         self.rows_written = 0
         self.prompts_written = 0
@@ -82,12 +83,35 @@ class RoutingParquetWriter:
         if self._buffered_prompts >= self.flush_every:
             self.flush()
 
+    def write_table(self, table: pa.Table, num_prompts: int) -> None:
+        """
+        Buffer an Arrow table holding all rows for num_prompts prompts.
+
+        Faster than write_prompt for large batches: rows never become Python
+        dicts (#106). The table must match ROUTING_SCHEMA exactly.
+        """
+        if not table.schema.equals(ROUTING_SCHEMA):
+            raise ValueError(f"Table schema doesn't match ROUTING_SCHEMA:\n{table.schema}")
+        self._move_rows_to_tables()
+        self._tables.append(table)
+        self._buffered_prompts += num_prompts
+        if self._buffered_prompts >= self.flush_every:
+            self.flush()
+
+    def _move_rows_to_tables(self) -> None:
+        """Turn rows buffered by write_prompt into a table, keeping write order."""
+        if self._buffer:
+            self._tables.append(pa.Table.from_pylist(self._buffer, schema=ROUTING_SCHEMA))
+            self._buffer = []
+
     def flush(self) -> None:
         """Write buffered rows as one row group."""
-        if not self._buffer:
+        self._move_rows_to_tables()
+        if not self._tables:
             return
 
-        table = pa.Table.from_pylist(self._buffer, schema=ROUTING_SCHEMA)
+        table = pa.concat_tables(self._tables)
+        self._tables = []
         # from_pylist fills missing keys with nulls; a missing field is a bug upstream
         nulls = [name for name in table.column_names if table[name].null_count]
         if nulls:
@@ -100,7 +124,6 @@ class RoutingParquetWriter:
             f"Wrote {table.num_rows} rows ({self._buffered_prompts} prompts) "
             f"to {self.path}"
         )
-        self._buffer = []
         self._buffered_prompts = 0
 
     def close(self) -> None:

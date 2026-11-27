@@ -11,7 +11,8 @@ Handles:
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+import hashlib
 import json
 import logging
 
@@ -26,7 +27,7 @@ class TokenMetadata:
     token_id: int
     token_str: str
     position: int
-    sequence_id: str  # hash or ID of the prompt
+    sequence_id: str  # e.g. "gsm8k-test-01234"; see TokenizationPipeline.tokenize_batch
 
 
 @dataclass
@@ -54,12 +55,22 @@ class TokenizationPipeline:
         self.model_name = model_name
         self.token_stats: Dict[int, TokenStats] = {}
 
-    def tokenize_batch(self, prompts: List[str]) -> Dict[str, Any]:
+    def tokenize_batch(
+        self,
+        prompts: List[str],
+        sequence_ids: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
         """
         Tokenize a batch of prompts and track repeated tokens.
 
         Args:
-            prompts: List of text prompts
+            prompts: List of prompt texts. Dataset example dicts are rejected:
+                they also hold the reference answer, which must not reach
+                the model.
+            sequence_ids: One stable ID per prompt, e.g. "gsm8k-test-01234"
+                (dataset, split, example). If omitted, each ID is a SHA-256
+                of the prompt text, which unlike hash() is the same in
+                every Python process.
 
         Returns:
             Dictionary with:
@@ -69,13 +80,25 @@ class TokenizationPipeline:
             - token_stats: Dict of TokenStats for each unique token
             - metadata: Batch-level metadata
         """
+        for prompt in prompts:
+            if not isinstance(prompt, str):
+                raise TypeError(
+                    f"tokenize_batch expects prompt text, got {type(prompt).__name__}; "
+                    "pass the example's prompt field, not the loader's example"
+                )
+        if sequence_ids is None:
+            sequence_ids = [
+                "sha256-" + hashlib.sha256(p.encode("utf-8")).hexdigest()[:16] for p in prompts
+            ]
+        elif len(sequence_ids) != len(prompts):
+            raise ValueError(f"{len(sequence_ids)} sequence_ids for {len(prompts)} prompts")
+
         all_token_ids = []
         all_token_strs = []
         all_sequences = []
 
-        for prompt in prompts:
-            sequence_id = hash(prompt) % (10**9)  # Simple hash for ID
-            token_ids = self.tokenizer.encode(prompt)
+        for prompt_str, sequence_id in zip(prompts, sequence_ids):
+            token_ids = self.tokenizer.encode(prompt_str)
             token_strs = [self.tokenizer.decode([tid]) for tid in token_ids]
 
             all_token_ids.append(token_ids)
