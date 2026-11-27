@@ -11,6 +11,7 @@ Validates:
 - Memory management during long runs
 """
 
+import json
 import logging
 from pathlib import Path
 import tempfile
@@ -235,6 +236,35 @@ def test_full_pipeline_subset_collection():
         logger.info(f"   - Prompts: {stats.total_prompts_processed}")
         logger.info(f"   - Routing events: {stats.total_routing_events}")
         logger.info(f"   - Errors: {len(stats.errors)}")
+
+
+@pytest.mark.gpu
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU")
+def test_a_subset_collection_validates_as_passed(tmp_path):
+    """#134: a real-model collection writes the same-batch repeat and its manifest, and
+    the determinism check, given Qwen's window record, reports "passed"."""
+    from determinism_validation import DeterminismValidator
+
+    window = Path(__file__).resolve().parents[1] / "near_tie_windows" / "qwen1.5-moe-a2.7b.json"
+    stats = run_full_pipeline(model_name="qwen1.5-moe-a2.7b", num_runs=2, subset_size=20,
+                              output_dir=tmp_path, ref="gpu-test")
+    assert stats.validation_passed, stats.errors
+    assert stats.repeats_completed == 1
+
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    assert manifest["status"] == "finished"
+    assert manifest["precision"] == "float16"
+    assert manifest["gpu"]["name"] == torch.cuda.get_device_name(0)
+    assert manifest["run_settings"] == {"TRITON_DEFAULT_FP_FUSION": "1"}
+    assert manifest["software"]["triton"]  # installed with CUDA torch
+    for dataset in ("gsm8k", "mbpp"):
+        assert (tmp_path / "determinism" / f"repeat_run_0_{dataset}.parquet").is_file()
+
+    report = DeterminismValidator(tmp_path, window=window).validate_all()
+    assert report.same_batch.status == "passed", report.summary
+    assert report.same_batch.compared_rows > 0 and report.same_batch.differing_rows == 0
+    assert report.near_tie.status == "ran", report.summary
+    assert report.status == "passed", report.summary
 
 
 @pytest.mark.gpu
