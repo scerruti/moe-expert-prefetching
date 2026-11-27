@@ -14,8 +14,17 @@ Each criterion needs a test that **checks values**, not just that output exists,
 
 <!-- For a 30-minute walkthrough: where to start, what to look at closely, what can be skimmed, and any decision you need from the reviewer. -->
 
+## Failure behaviour
+
+How can this change fail, and what happens when it does? It must fail loudly, release what it acquired, and never report a pass for a check that couldn't run (CONTRIBUTING.md, "Failure Behaviour").
+
+| Failure mode | What happens | Test that forces it |
+|---|---|---|
+| <!-- e.g. the dataset fails to load partway --> | <!-- e.g. hooks removed, the original error raised --> | <!-- e.g. `test_collection_scope.py::test_hooks_are_removed_when_dataset_loading_fails` --> |
+
 ## Checklist
 
 - [ ] CPU tests pass in CI.
-- [ ] GPU tests (`pytest -m gpu`) ran on Colab at this PR's final commit, if this PR changes GPU code paths.
+- [ ] GPU tests (`pytest -m gpu`) ran on Colab at this PR's final commit, if this PR changes GPU code paths or dependencies (`requirements.txt` or a lock file).
+- [ ] At least one test forces a failure and checks what's left (CONTRIBUTING.md).
 - [ ] No test assertion was loosened to make it pass, or the reason is explained above (CONTRIBUTING.md).

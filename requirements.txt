@@ -6,6 +6,8 @@
 torch==2.15.0
 torchvision==0.29.2
 transformers==4.45.0
+# Required by ModelLoader's device_map; keep local and Colab dispatch code aligned.
+accelerate==1.16.0
 datasets==5.0.1
 pyarrow==25.0.1
 tqdm==4.70.1

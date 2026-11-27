@@ -11,11 +11,7 @@ machine needs about 29 GB and has crashed laptops (#87).
 """
 
 import pytest
-import torch
 import logging
-
-from model_loader import ModelLoader
-from shared_model import reset_after_test
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +23,9 @@ def pytest_configure(config):
 
 
 def pytest_collection_modifyitems(config, items):
+    # The root startup guard must run before an incompatible torch can be imported.
+    import torch
+
     skip_without_gpu = pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU")
     for item in items:
         if GPU_FIXTURES & set(getattr(item, "fixturenames", ())):
@@ -37,6 +36,8 @@ def pytest_collection_modifyitems(config, items):
 @pytest.fixture(scope="session")
 def qwen_tokenizer():
     """Qwen1.5-MoE-A2.7B's tokenizer only: a few MB, no model weights, runs on CPU."""
+    from model_loader import ModelLoader
+
     return ModelLoader("qwen1.5-moe-a2.7b", device="cpu").load_tokenizer()
 
 
@@ -48,6 +49,9 @@ def _qwen_model_session():
     Loading once means a failing test can't leave a second copy behind and run
     the GPU out of memory for every test after it.
     """
+    import torch
+    from model_loader import ModelLoader
+
     model, tokenizer, config = ModelLoader("qwen1.5-moe-a2.7b").load()
     logger.info(f"Loaded model on device: {model.device}")
     yield model, tokenizer, config
@@ -67,5 +71,7 @@ def qwen_model(_qwen_model_session):
         def test_something(qwen_model):
             model, tokenizer, config = qwen_model
     """
+    from shared_model import reset_after_test
+
     yield _qwen_model_session
     reset_after_test(_qwen_model_session[0])
