@@ -113,6 +113,24 @@ class Config:
 
 # ---------- redaction ----------
 
+LINE_NOTE = re.compile(r"^\*\[Line redacted at the user's request: (.*)\.\]\*$")
+
+
+def _merge_redacted_runs(lines):
+    """Consecutive lines redacted for the same reason become one note."""
+    out, i = [], 0
+    while i < len(lines):
+        m = LINE_NOTE.match(lines[i])
+        j = i + 1
+        while m and j < len(lines) and lines[j] == lines[i]:
+            j += 1
+        if m and j - i > 1:
+            out.append(f"*[{j - i} lines redacted at the user's request: {m.group(1)}.]*")
+        else:
+            out.append(lines[i])
+        i = j
+    return out
+
 class Redactor:
     def __init__(self, config):
         self.config = config
@@ -134,7 +152,7 @@ class Redactor:
                 line, n = AMOUNT.subn("$[amount]", line)
                 self.count("pay amount", n)
             lines.append(line)
-        text = "\n".join(lines)
+        text = "\n".join(_merge_redacted_runs(lines))
         for prefix in self.config.repo_paths:
             text, n = re.subn(re.escape(prefix), "", text)
             self.count("repo path", n)

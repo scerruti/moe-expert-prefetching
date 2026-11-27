@@ -193,3 +193,17 @@ def test_review_reports_stay_out_of_the_record_folder(tmp_path, config_dir):
     assert not list(out.glob("*.REVIEW.md"))
     report = (config_dir / "reviews" / "2026-11-20_session.REVIEW.md").read_text()
     assert "check redaction" in report and "Ann Smith" not in report
+
+
+def test_consecutive_redacted_lines_become_one_note(tmp_path, config_dir):
+    (config_dir / "drops.json").write_text(json.dumps(
+        [{"line_match": "(?i)other project", "reason": "another project's work"}]))
+    s = write_session(tmp_path / "s.jsonl", [
+        prompt(0, "Status?"),
+        reply(1, [text("Our project is fine.\nOther project: step one.\nOther project: step two.\n"
+                       "Back to ours.\nOther project: one more.")]),
+    ])
+    md = record(run(tmp_path, config_dir, [s]))
+    assert "*[2 lines redacted at the user's request: another project's work.]*" in md
+    assert md.count("*[Line redacted at the user's request: another project's work.]*") == 1
+    assert "Our project is fine." in md and "Back to ours." in md and "step one" not in md
