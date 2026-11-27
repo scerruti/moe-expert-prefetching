@@ -52,15 +52,15 @@ Checking every change, or every first change, would raise warnings for legitimat
 
 ## How the window is computed, for any model
 
-1. **Pilot run.** Use the same settings as the real collection: the same software versions, hardware, precision, batch size and batch orderings, on a separate set of prompts.
+1. **Pilot run.** A separate run from the real collection, with the same settings: the same software versions, hardware, precision, batch size and batch orderings. It may use the same prompts.
 2. **Find the root changes.** Keep adding pilot prompts until there are **at least 99** root changes.
 3. **Window = 3 × the largest root-change gap** in the pilot.
 4. **Record** the window, the pilot run it came from, and the root-change count.
 5. **Apply it to the real collection,** never to the pilot that set it. Root changes outside the window are warnings. Knock-ons are reported.
 
-**Where 99 comes from.** The project's target is that, if the real collection behaves like the pilot, fewer than **1%** of its root changes should fall outside the pilot's largest gap. If the pilot has n root changes, the chance a new one beats all of them is about 1 in (n + 1). For 1%, n + 1 ≥ 100, so n ≥ 99. The 1% target is a project-wide choice; the count follows from it, and the same rule applies to every model.
+**Where 99 comes from.** The window rests on the pilot's largest root-change gap, so the pilot needs enough root changes for that largest gap to mean something. The project's rule: if the real collection's root changes were new draws from the same process as the pilot's, fewer than **1%** of them should fall outside the pilot's largest gap. With n root changes in the pilot, the chance a new one beats all of them is about 1 in (n + 1). For 1%, n + 1 ≥ 100, so n ≥ 99. When the real collection repeats the pilot's prompts and orderings, its root changes aren't new draws (see Limitations), but the minimum still applies: every model's window rests on at least 99 root changes. The 1% target is a project-wide choice; the count follows from it, and the same rule applies to every model.
 
-**Where 3 comes from.** The pilot uses different prompts from the real collection and may miss the rarest near-ties. A 3× margin covers that, while staying far below the gaps of real errors. It's a project-wide choice, set once and not tuned per model.
+**Where 3 comes from.** The pilot's largest gap is the largest of a sample, and the real collection may meet rarer near-ties than the pilot saw, for example where its batches or hardware differ from the pilot's. A 3× margin covers that, while staying far below the gaps of real errors. It's a project-wide choice, set once and not tuned per model.
 
 **Qwen1.5's window.** Using the trial collection as its pilot: 3,429 root changes (well above 99), largest gap 0.00035036, so the window is **3 × 0.00035 ≈ 0.00105**. It's recorded in `phase_1/near_tie_windows/qwen1.5-moe-a2.7b.json` with a fingerprint of each pilot file. #60's validator and a separate reference script both reproduce these figures from the trial data. It applies to the official Phase 1 collection. If the official collection's settings differ from the trial's (for example after the transformers upgrade, #124), a new pilot recomputes it.
 
@@ -75,7 +75,7 @@ Checking every change, or every first change, would raise warnings for legitimat
 - **Empirical, not proof.** The check shows root changes behave like rounding. A warning means "look at this", not "this is a bug".
 - **Root changes are an approximation.** Calling a change a root change assumes nothing earlier explains it. Attention-layer rounding can still differ between orderings without changing any router choice, so a few root changes may be partly knock-on. This is why the margin exists and why the result is a warning.
 - **Noise grows with depth.** Small differences compound through the layers (Waleed, #128), so deeper root changes may sit at somewhat larger gaps. The window is taken over all layers; if warnings cluster in the deepest layers, a per-layer window is the next step.
-- **Calibration.** Qwen's window comes from the trial data. It's honest only if the official collection, a separate run, is what gets checked.
+- **Calibration.** The window comes from a pilot, a separate run. If the real collection repeats the pilot's prompts, orderings and settings, its routing is expected to reproduce the pilot's (decision 2: identical batches give identical routing). Its near-tie check then confirms consistency rather than testing new data. What it catches is a difference between the two runs: in code, software or hardware.
 - **Units.** Probability gaps depend on how many experts a model has, so a window doesn't transfer between models. That's why each model computes its own. For other models (#112), measuring the gap in the router's raw scores, or in fp16 rounding steps, may make windows easier to compare.
 - **Gap definition matters.** Using one ordering's gap instead of the smaller of the two changes the results. The check must state its definition.
 - **Trial data** predates the `position_ids` fix, so the official pilot re-establishes these numbers.
