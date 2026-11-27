@@ -27,6 +27,7 @@ from dataset_loaders import GSM8KLoader, MBPPLoader
 from forward_pass import BatchRouting, ForwardPassCapture
 from model_loader import ModelLoader
 from parquet_storage import ROUTING_SCHEMA, RoutingParquetWriter, verify_parquet
+from run_settings import require_run_settings
 from tokenizer import TokenizationPipeline
 
 logger = logging.getLogger(__name__)
@@ -458,6 +459,10 @@ class FullPipeline:
            run in num_runs randomized orderings, written to
            output_dir/determinism/ for Phase 2's determinism check (#29).
         """
+        # Before loading anything: the entry point must have set Triton's settings
+        # before torch was imported (#133)
+        require_run_settings()
+
         logger.info("\n" + "=" * 60)
         logger.info("PHASE 1 FULL PIPELINE EXECUTION")
         logger.info("=" * 60)
