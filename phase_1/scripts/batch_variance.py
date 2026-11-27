@@ -2,6 +2,14 @@
 """
 Where does batch composition change Phase 1 routing?
 
+HISTORICAL: this is #114's analysis, kept as the record of how its figures were
+produced. It uses definitions that #128 replaced (phase_1/docs/determinism_check.md):
+a "cascade" counted from a token's first flip, where the check now uses root
+changes, and a fixed 0.01 probability threshold, where it now uses a window
+computed for each model. The determinism check is determinism_validation.py;
+the collection notebook no longer runs this script (#134). Run it by hand only
+to compare with #114's figures, measured the same way.
+
 Usage: python phase_1/scripts/batch_variance.py <collection output>/determinism
 
 Compares each ordering with ordering 0 (per dataset), aligned on
