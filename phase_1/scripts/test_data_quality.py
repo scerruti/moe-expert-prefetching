@@ -9,6 +9,7 @@ CPU only: rows in the Phase 1 parquet schema, written to a temporary folder.
 """
 
 import math
+import os
 from pathlib import Path
 
 import pyarrow as pa
@@ -20,6 +21,8 @@ from parquet_storage import ROUTING_SCHEMA
 from routing_test_helpers import TOY_EXPERTS, routing_row
 
 SAMPLE = Path(__file__).resolve().parent / "fixtures" / "trial_sample"
+REPO = Path(__file__).resolve().parents[2]
+TRIAL = Path(os.environ.get("MOE_TRIAL_DIR", REPO / "data" / "phase_1_trial_38ef1da"))
 UNIFORM = 1 / TOY_EXPERTS
 
 
@@ -113,3 +116,12 @@ def test_the_trial_sample_still_passes():
     assert result.total_rows > 0
     assert (result.selected_nonfinite, result.out_of_range_values, result.selected_prob_mismatches,
             result.selected_length_mismatches) == (0, 0, 0, 0)
+
+
+@pytest.mark.skipif(not (TRIAL / "determinism").is_dir(),
+                    reason=f"needs the full trial data at {TRIAL} (not in git); set MOE_TRIAL_DIR")
+def test_the_full_trial_passes():
+    """Every row of the trial's five orderings (5 x 365,640) passes every check."""
+    result = DeterminismValidator(TRIAL / "determinism").check_data_quality()
+    assert result.passed, result
+    assert result.total_rows == 5 * 365_640

@@ -122,6 +122,10 @@ class DataQualityCheckResult:
     inf_count: int = 0
     invalid_prob_sums: int = 0
     invalid_indices: int = 0
+    selected_nonfinite: int = 0  # NaN or infinity in selected_probs (#145)
+    out_of_range_values: int = 0  # finite expert_probs or selected_probs outside [0, 1]
+    selected_prob_mismatches: int = 0  # rows whose selected_probs aren't expert_probs at the selected experts
+    selected_length_mismatches: int = 0  # rows with a different number of selected_probs and selected_experts
     notes: List[str] = field(default_factory=list)
 
 
@@ -401,58 +405,92 @@ class DeterminismValidator:
         return report
 
     def check_data_quality(self) -> DataQualityCheckResult:
-        """Validate data quality: no NaN/inf, valid probabilities and indices."""
+        """Validate every probability column and index (#145).
+
+        expert_probs: no NaN or infinity, every value in [0, 1], each row summing to 1.
+        selected_experts: indices into that row's expert_probs; the width comes from
+        the data, so a row with no expert_probs has no valid selection.
+        selected_probs: finite, in [0, 1], one per selected expert, and equal to
+        expert_probs at the selected experts.
+        """
         logger.info("Checking data quality...")
 
         result = DataQualityCheckResult()
+        columns = ["expert_probs", "selected_experts", "selected_probs"]
 
         for parquet_file in self.parquet_files:
             try:
-                table = pq.read_table(parquet_file, columns=["expert_probs", "selected_experts"])
+                table = pq.read_table(parquet_file, columns=columns)
                 prob_lengths = _list_lengths(table.column("expert_probs"))
                 probs = _list_values(table.column("expert_probs")).astype(np.float64)
-                result.total_rows += len(prob_lengths)
+                rows = len(prob_lengths)
+                result.total_rows += rows
 
                 result.nan_count += int(np.isnan(probs).sum())
                 result.inf_count += int(np.isinf(probs).sum())
+                with np.errstate(invalid="ignore"):
+                    result.out_of_range_values += int((np.isfinite(probs) & ((probs < 0) | (probs > 1))).sum())
 
                 # Probability sums should be ~1.0 (rows summing to 0 or NaN are skipped)
                 nonempty = prob_lengths > 0
-                sums = np.zeros(len(prob_lengths))
+                prob_offsets = np.concatenate([[0], np.cumsum(prob_lengths)[:-1]]).astype(np.int64)
+                sums = np.zeros(rows)
                 if probs.size:
-                    offsets = np.concatenate([[0], np.cumsum(prob_lengths)[:-1]])
-                    sums[nonempty] = np.add.reduceat(probs, offsets[nonempty])
+                    sums[nonempty] = np.add.reduceat(probs, prob_offsets[nonempty])
                 with np.errstate(invalid="ignore"):
                     bad_sum = (sums > 0) & ~((sums >= 0.99) & (sums <= 1.01))
                 result.invalid_prob_sums += int(bad_sum.sum())
 
-                # Selected experts must index into that row's expert_probs
+                # Selected experts must index into that row's own expert_probs
                 selected_lengths = _list_lengths(table.column("selected_experts"))
                 selected = _list_values(table.column("selected_experts")).astype(np.int64)
-                num_experts = np.repeat(np.where(nonempty, prob_lengths, 60), selected_lengths)
-                result.invalid_indices += int(((selected < 0) | (selected >= num_experts)).sum())
+                row_of_selected = np.repeat(np.arange(rows), selected_lengths)
+                width = prob_lengths[row_of_selected]
+                in_range = (selected >= 0) & (selected < width)
+                result.invalid_indices += int((~in_range).sum())
+
+                # Selected probabilities: finite, in [0, 1], one per selected expert
+                chosen_lengths = _list_lengths(table.column("selected_probs"))
+                chosen = _list_values(table.column("selected_probs")).astype(np.float64)
+                result.selected_nonfinite += int((~np.isfinite(chosen)).sum())
+                with np.errstate(invalid="ignore"):
+                    result.out_of_range_values += int((np.isfinite(chosen) & ((chosen < 0) | (chosen > 1))).sum())
+                same_length = chosen_lengths == selected_lengths
+                result.selected_length_mismatches += int((~same_length).sum())
+
+                # ...and equal to expert_probs at the selected experts, where both can be compared
+                comparable = in_range & same_length[row_of_selected]
+                if comparable.any():
+                    expected = probs[prob_offsets[row_of_selected[comparable]] + selected[comparable]]
+                    actual = chosen[comparable] if same_length.all() else \
+                        chosen[np.repeat(same_length, chosen_lengths)][comparable[np.repeat(same_length, selected_lengths)]]
+                    with np.errstate(invalid="ignore"):
+                        differs = np.abs(actual - expected) > 1e-6
+                    result.selected_prob_mismatches += len(np.unique(row_of_selected[comparable][differs]))
 
             except Exception as e:
                 logger.error(f"Error reading {parquet_file}: {e}")
                 result.notes.append(f"Error reading {parquet_file}: {e}")
 
-        # Determine pass/fail
-        result.passed = (
-            result.nan_count == 0 and
-            result.inf_count == 0 and
-            result.invalid_prob_sums == 0 and
-            result.invalid_indices == 0 and
-            len(result.notes) == 0
-        )
+        problems = {
+            "NaN values (expert_probs)": result.nan_count,
+            "Inf values (expert_probs)": result.inf_count,
+            "Invalid prob sums": result.invalid_prob_sums,
+            "Invalid indices": result.invalid_indices,
+            "Non-finite selected_probs": result.selected_nonfinite,
+            "Values outside [0, 1]": result.out_of_range_values,
+            "selected_probs not matching expert_probs": result.selected_prob_mismatches,
+            "selected_probs length mismatches": result.selected_length_mismatches,
+        }
+        result.passed = not any(problems.values()) and not result.notes
 
         if result.passed:
             logger.info(f"✅ Data quality check PASSED ({result.total_rows} rows)")
         else:
-            logger.error(f"❌ Data quality check FAILED:")
-            logger.error(f"   NaN values: {result.nan_count}")
-            logger.error(f"   Inf values: {result.inf_count}")
-            logger.error(f"   Invalid prob sums: {result.invalid_prob_sums}")
-            logger.error(f"   Invalid indices: {result.invalid_indices}")
+            logger.error("❌ Data quality check FAILED:")
+            for name, count in problems.items():
+                if count:
+                    logger.error(f"   {name}: {count}")
 
         return result
 
