@@ -73,3 +73,10 @@ def test_duplicate_keys_are_rejected(tmp_path):
 
     with pytest.raises(ValueError, match="duplicate"):
         batch_variance.compare(reference, doubled)
+
+
+def test_the_script_says_it_is_historical():
+    """#134: it uses definitions #128 replaced, so it says so at the top."""
+    header = batch_variance.__doc__
+    assert "historical" in header.lower()
+    assert "#128" in header and "#114" in header
