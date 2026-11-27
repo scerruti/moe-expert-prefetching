@@ -11,6 +11,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+from run_manifest import write_manifest
 from determinism_validation import (
     DeterminismValidator,
     InsufficientPilotError,
@@ -157,7 +158,7 @@ def test_the_window_is_the_margin_times_the_largest_root_gap(tmp_path):
     gaps = [0.0001 * (i % 7) for i in range(99)] + [0.0004]
     pilot_with_roots(tmp_path / "pilot", gaps)
 
-    record = compute_window(tmp_path / "pilot", target_rate=0.01, margin=3.0)
+    record = compute_window(tmp_path / "pilot", target_rate=0.01, margin=3.0, model="toy-moe")
 
     assert record["root_changes"] == 100
     assert record["largest_root_gap"] == pytest.approx(0.0006, abs=1e-6)
@@ -170,7 +171,7 @@ def test_the_window_is_the_margin_times_the_largest_root_gap(tmp_path):
 def test_a_pilot_with_too_few_root_changes_is_refused(tmp_path):
     pilot_with_roots(tmp_path / "pilot", [0.0001] * 98)
     with pytest.raises(InsufficientPilotError, match="98 root changes; at least 99"):
-        compute_window(tmp_path / "pilot", target_rate=0.01, margin=3.0)
+        compute_window(tmp_path / "pilot", target_rate=0.01, margin=3.0, model="toy-moe")
 
 
 def test_orderings_are_compared_with_ordering_0_only(tmp_path):
@@ -255,6 +256,7 @@ def test_without_a_repeat_the_same_batch_check_does_not_run(tmp_path):
 def test_a_check_that_did_not_run_keeps_the_report_from_passing(tmp_path):
     write_grid(tmp_path / "run_0_gsm8k.parquet", grid())
     write_grid(tmp_path / "run_1_gsm8k.parquet", grid())
-    report = DeterminismValidator(tmp_path, window={"window": 0.003}).validate_all()
+    write_manifest(tmp_path, {"status": "finished", "model": "toy-moe"})  # validate_all needs one (#134)
+    report = DeterminismValidator(tmp_path, window={"model": "toy-moe", "window": 0.003}).validate_all()
     assert report.status == "incomplete" and not report.overall_passed
     assert "same-batch" in report.summary.lower() and "not run" in report.summary.lower()

@@ -19,6 +19,7 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from run_manifest import write_manifest
 from determinism_validation import (
     DeterminismValidator,
     ValidationReport,
@@ -192,6 +193,7 @@ def test_validation_report_generation():
                 num_rows=50,
             )
 
+        write_manifest(tmpdir, {"status": "finished", "model": "qwen1.5-moe-a2.7b"})  # validate_all needs one (#134)
         validator = DeterminismValidator(tmpdir)
         report = validator.validate_all()
 
@@ -214,6 +216,7 @@ def test_report_persistence():
         create_test_parquet_file(tmpdir / "test_gsm8k.parquet", num_rows=50)
 
         # Generate and save report
+        write_manifest(tmpdir, {"status": "finished", "model": "qwen1.5-moe-a2.7b"})  # validate_all needs one (#134)
         validator = DeterminismValidator(tmpdir)
         report = validator.validate_all()
 

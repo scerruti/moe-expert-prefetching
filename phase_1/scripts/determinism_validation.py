@@ -16,6 +16,9 @@ Implements the check decided in phase_1/docs/determinism_check.md (#128):
   near-tie window. Root changes outside it are warnings to investigate, not
   failures; knock-ons are reported, never judged.
 - The window is computed from a pilot run (compute_window), never chosen.
+- The model comes from the collection's manifest.json (#134). validate_all()
+  refuses a collection without one, a run that didn't finish, and a window
+  record for a different model.
 - Data quality: no NaN/inf, probabilities sum to 1.0, valid indices.
 - Expert activation: frequency per layer (from full/ when present).
 
@@ -38,6 +41,8 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
+
+from run_manifest import ManifestError, read_manifest, require_finished_manifest
 
 logger = logging.getLogger(__name__)
 
@@ -272,13 +277,17 @@ def _fingerprint(path: Path) -> str:
 
 
 def compute_window(pilot_dir: Path, target_rate: float = TARGET_RATE, margin: float = MARGIN,
-                   model: str = "qwen1.5-moe-a2.7b") -> Dict[str, Any]:
+                   model: Optional[str] = None) -> Dict[str, Any]:
     """The near-tie window for a model, from a pilot run with the real collection's settings.
 
     Window = margin x the largest root-change gap, comparing ordering 0 with each
     other ordering. Refuses a pilot with fewer than required_root_changes(target_rate)
-    root changes. Returns the record to save with the model's settings."""
+    root changes. Returns the record to save with the model's settings.
+
+    The model comes from the pilot's manifest.json (#134). A pilot from before
+    manifests has none, and then the model must be named; it is never assumed."""
     pilot_dir = Path(pilot_dir)
+    model = _pilot_model(pilot_dir, model)
     runs = _orderings(pilot_dir)
     if not runs:
         raise InsufficientPilotError(f"{pilot_dir}: no run_<n>_<dataset>.parquet orderings")
@@ -314,6 +323,20 @@ def compute_window(pilot_dir: Path, target_rate: float = TARGET_RATE, margin: fl
     }
 
 
+def _pilot_model(pilot_dir: Path, model: Optional[str]) -> str:
+    """The pilot's model: from its manifest, which a named model must agree with."""
+    if read_manifest(pilot_dir) is None:
+        if not model:
+            raise ManifestError(
+                f"{pilot_dir} has no manifest.json, so name the model the pilot ran: "
+                "compute_window(pilot_dir, model=...)")
+        return model
+    recorded = require_finished_manifest(pilot_dir)["model"]
+    if model and model != recorded:
+        raise ManifestError(f"The pilot's manifest says {recorded!r}, not {model!r}")
+    return recorded
+
+
 # ---------- the validator ----------
 
 class DeterminismValidator:
@@ -333,6 +356,7 @@ class DeterminismValidator:
         if isinstance(window, (str, Path)):
             window = json.loads(Path(window).read_text())
         self.window = window
+        self.manifest: Optional[Dict[str, Any]] = None
         logger.info(f"Found {len(self.parquet_files)} parquet files")
 
     def _files_in(self, subdir: str) -> List[Path]:
@@ -340,12 +364,28 @@ class DeterminismValidator:
         return [f for f in self.parquet_files if f.parent.name == subdir] or self.parquet_files
 
     def validate_all(self) -> ValidationReport:
-        """Run all validation checks."""
+        """Run all validation checks on a finished collection.
+
+        Refuses (ManifestError) a collection with no manifest.json, one whose run
+        didn't finish, or a window record for a different model than the
+        manifest's: the wrong window would make the near-tie check meaningless (#134).
+        """
         logger.info("=" * 60)
         logger.info("DETERMINISM & CONSISTENCY VALIDATION")
         logger.info("=" * 60)
 
-        report = ValidationReport(model=self._infer_model(), dataset=self._infer_dataset())
+        self.manifest = require_finished_manifest(self.parquet_dir)
+        model = self.manifest["model"]
+        if self.window:
+            window_model = self.window.get("model")
+            if not window_model:
+                raise ManifestError("The window record names no model, so it can't be checked against "
+                                    f"the collection's ({model!r})")
+            if window_model != model:
+                raise ManifestError(f"The window record is for {window_model!r}, but this collection "
+                                    f"ran {model!r} (from its manifest.json)")
+
+        report = ValidationReport(model=model, dataset=self._infer_dataset())
         report.data_quality = self.check_data_quality()
         if report.data_quality.passed:
             report.same_batch = self.check_same_batch()
@@ -532,10 +572,6 @@ class DeterminismValidator:
             return "mbpp"
         return "mixed"
 
-    def _infer_model(self) -> str:
-        """The model named in the window record, else the Phase 1 model."""
-        return (self.window or {}).get("model", "qwen1.5-moe-a2.7b")
-
     def _generate_summary(self, report: ValidationReport) -> str:
         """Generate human-readable summary."""
         lines = [f"Model: {report.model}", f"Dataset: {report.dataset}", ""]
@@ -575,6 +611,7 @@ class DeterminismValidator:
             "dataset": report.dataset,
             "status": report.status,
             "window_record": self.window,
+            "manifest": self.manifest,
             "same_batch": asdict(report.same_batch),
             "near_tie": asdict(report.near_tie),
             "data_quality": asdict(report.data_quality),
