@@ -20,6 +20,12 @@ This folder documents the project's intellectual history: conversations with AI 
   - MBPP-Sanitized (427) vs. full MBPP (974) comparison
   - **Key decision:** MBPP-Sanitized is standard for leaderboards
 
+### Claude Code sessions
+
+- [**Claude Code session records**](claude-code/README.md): one folder per contributor
+  - [Stephen's sessions](claude-code/stephen/README.md), 18 October 2026 onwards, with a summary of each day, including the mistakes and corrections
+  - How the records are made, the redaction rules, and how to add your own
+
 ## Slide Decks
 
 - [**2026-09-10: Speculative Expert Prefetching Overview**](slides_2026-09-10_moe_prefetching_overview.md)
@@ -50,4 +56,10 @@ Supporting materials and background research:
 
 ---
 
-**Last Updated:** 2026-09-11
+## Records are never reformatted
+
+Files in this folder record what was actually said. Don't run formatters or linters on them, and don't correct them. Their only changes are the documented sanitizing steps (see #125).
+
+---
+
+**Last Updated:** 2026-11-22
