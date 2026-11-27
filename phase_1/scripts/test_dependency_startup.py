@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def run_probe(tmp_path, requirement, installed=None, *, nested=False):
-    for name in ("conftest.py", "dependency_versions.py", "pytest.ini"):
+    for name in ("conftest.py", "dependency_versions.py", "run_settings.py", "pytest.ini"):
         source = REPO_ROOT / name
         if source.exists():
             shutil.copyfile(source, tmp_path / name)
