@@ -1,6 +1,6 @@
 # Contributors
 
-- **Taylor Berg-Kirkpatrick** (tberg@ucsd.edu) – UC San Diego
-- **Waleed Alghaithi** (walghaithi@ucsd.edu) – UCSD McNair Fellow
-- **Stephen Cerruti** (steve.cerruti@gmail.com) – e3 Civic High
-- **Dvora Celniker** (dvoracelniker@sduhsd.net) – Canyon Crest Academy
+- **Taylor Berg-Kirkpatrick** – UC San Diego
+- **Waleed Alghaithi** ([@waleedA13](https://github.com/waleedA13)) – UCSD McNair Fellow
+- **Stephen Cerruti** ([@scerruti](https://github.com/scerruti)) – e3 Civic High
+- **Dvora Celniker** ([@dicelniker](https://github.com/dicelniker)) – Canyon Crest Academy
