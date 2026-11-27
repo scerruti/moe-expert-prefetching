@@ -27,6 +27,7 @@ from dataset_loaders import GSM8KLoader, MBPPLoader
 from forward_pass import BatchRouting, ForwardPassCapture
 from model_loader import ModelLoader
 from parquet_storage import ROUTING_SCHEMA, RoutingParquetWriter, verify_parquet
+from run_manifest import code_state, gpu_description, software_versions, utc_now, write_manifest
 from run_settings import require_run_settings
 from tokenizer import TokenizationPipeline
 
@@ -70,6 +71,7 @@ class PipelineStats:
     total_routing_events: int = 0
     runs_completed: int = 0  # determinism-subset orderings completed for both datasets
     full_passes_completed: int = 0  # one per dataset (#109)
+    repeats_completed: int = 0  # ordering 0 rerun for both datasets, for the same-batch check (#134)
     errors: List[str] = None
     validation_passed: bool = False
     # Seconds per stage, summed over all passes (#106)
@@ -124,6 +126,7 @@ class FullPipeline:
         output_dir: Path = Path("data/phase_1_collection"),
         device: Optional[str] = None,
         batch_size: int = 32,
+        ref: Optional[str] = None,
     ):
         """
         Initialize full pipeline.
@@ -135,6 +138,8 @@ class FullPipeline:
             subset_size: Limit to N examples per dataset (None = use all)
             output_dir: Directory for parquet files
             device: Device for model (default: cuda if available)
+            ref: The branch, tag or commit the collection was started from, recorded
+                in the manifest next to the commit (#134)
             batch_size: Prompts per forward pass. 32 fits the A100 in fp16 even for
                 the 32 longest prompts (30.4 GB peak) and is about 3x faster than 8,
                 because the forward pass cost is mostly per batch (#106)
@@ -144,6 +149,8 @@ class FullPipeline:
         self.subset_size = subset_size
         self.output_dir = Path(output_dir)
         self.batch_size = batch_size
+        self.ref = ref
+        self.manifest: Optional[Dict[str, Any]] = None
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
 
         self.model = None
@@ -471,16 +478,19 @@ class FullPipeline:
         # so a pipeline kept in a notebook never holds hooks on the model (#59 review)
         try:
             self._collect()
-        except BaseException:
+        except BaseException as error:
             self._remove_hooks(quietly=True)  # never let a cleanup error hide the original one
+            self._close_manifest("failed", error=f"{type(error).__name__}: {error}", quietly=True)
             raise
         self._remove_hooks()
+        self._close_manifest("finished" if self.stats.validation_passed else "failed")
 
         logger.info("\n" + "=" * 60)
         logger.info("PIPELINE EXECUTION SUMMARY")
         logger.info("=" * 60)
         logger.info(f"Full passes completed: {self.stats.full_passes_completed}/2")
         logger.info(f"Determinism orderings completed: {self.stats.runs_completed}/{self.num_runs}")
+        logger.info(f"Same-batch repeats completed: {self.stats.repeats_completed}/1")
         logger.info(f"Prompts processed: {self.stats.total_prompts_processed}")
         logger.info(f"Routing events captured: {self.stats.total_routing_events}")
         logger.info(f"Errors: {len(self.stats.errors)}")
@@ -505,9 +515,60 @@ class FullPipeline:
                 raise
             logger.error("Removing the router hooks failed", exc_info=True)
 
+    def _start_manifest(self) -> None:
+        """Write manifest.json before any data: what this collection runs with (#134)."""
+        dtype = getattr(self.model, "dtype", None)
+        self.manifest = {
+            "manifest_version": 1,
+            "status": "running",
+            "model": self.model_name,
+            "precision": str(dtype).replace("torch.", "") if dtype is not None else None,
+            "batch_size": self.batch_size,
+            "num_orderings": self.num_runs,
+            "prompt_limit": self.subset_size,  # None: every prompt
+            "seeds": {"orderings": RUN_SEEDS[:self.num_runs], "determinism_subset": DETERMINISM_SUBSET_SEED},
+            "determinism_subset_size": DETERMINISM_SUBSET_SIZE,
+            "same_batch_repeat": {"ordering": 0, "seed": RUN_SEEDS[0]},
+            "run_settings": require_run_settings(),
+            "software": software_versions(),
+            "gpu": gpu_description(),
+            "code": {**code_state(), "ref": self.ref},
+            "started_utc": utc_now(),
+        }
+        write_manifest(self.output_dir, self.manifest)
+
+    def _close_manifest(self, status: str, error: Optional[str] = None, quietly: bool = False) -> None:
+        """Add the results and the final status. With quietly, log a failure instead of raising."""
+        if self.manifest is None:
+            return  # failed before the manifest was written; there's no data either
+        self.manifest.update({
+            "status": status,
+            "finished_utc": utc_now(),
+            "results": {
+                "prompt_passes": self.stats.total_prompts_processed,
+                "routing_rows": self.stats.total_routing_events,
+                "full_passes_completed": self.stats.full_passes_completed,
+                "orderings_completed": self.stats.runs_completed,
+                "repeats_completed": self.stats.repeats_completed,
+                "collection_valid": self.stats.validation_passed,
+                "errors": list(self.stats.errors),
+                "timings_seconds": {stage: round(s, 1) for stage, s in self.stats.timings.items()},
+            },
+        })
+        if error is not None:
+            self.manifest["error"] = error
+        try:
+            write_manifest(self.output_dir, self.manifest)
+        except Exception:
+            if not quietly:
+                raise
+            logger.error("Writing the failed run's manifest failed", exc_info=True)
+
     def _collect(self) -> None:
-        """Load the model and datasets, then run the full passes and the determinism orderings."""
+        """Load the model and datasets, then run the full passes, the determinism orderings
+        and the same-batch repeat."""
         self.load_model()
+        self._start_manifest()
         datasets = dict(zip(("gsm8k", "mbpp"), self.load_datasets()))
 
         for dataset_name, prompts in datasets.items():
@@ -537,6 +598,22 @@ class FullPipeline:
             if all(succeeded):
                 self.stats.runs_completed += 1
 
+        # Same-batch repeat (#134): ordering 0 again, with its seed and prompts, so its
+        # batches are identical; the same-batch check requires bitwise-identical routing
+        repeated = [
+            self._run_pass(
+                run_id=0,
+                seed=RUN_SEEDS[0],
+                prompts=subset,
+                dataset_name=dataset_name,
+                output_path=self.output_dir / "determinism" / f"repeat_run_0_{dataset_name}.parquet",
+                label=f"Same-batch repeat of ordering 1: {dataset_name}",
+            )
+            for dataset_name, subset in subsets.items()
+        ]
+        if all(repeated):
+            self.stats.repeats_completed += 1
+
         # Final validation
         self._validate_pipeline_completion()
 
@@ -565,6 +642,11 @@ class FullPipeline:
             self.stats.validation_passed = False
             return False
 
+        if self.stats.repeats_completed < 1:
+            logger.error("The same-batch repeat of ordering 0 didn't complete")
+            self.stats.validation_passed = False
+            return False
+
         if self.stats.total_routing_events == 0:
             logger.error("No routing events captured")
             self.stats.validation_passed = False
@@ -585,6 +667,7 @@ def run_full_pipeline(
     num_runs: int = 5,
     subset_size: int = 100,
     output_dir: Path = Path("data/phase_1_collection"),
+    ref: Optional[str] = None,
 ) -> PipelineStats:
     """
     Execute full Phase 1 data collection pipeline.
@@ -593,7 +676,8 @@ def run_full_pipeline(
         model_name: Model for collection
         num_runs: Number of randomized runs
         subset_size: Limit prompts per dataset (for testing)
-        output_dir: Output directory for parquet files
+        output_dir: Output directory for parquet files and manifest.json
+        ref: The branch, tag or commit collected from, recorded in the manifest
 
     Returns:
         PipelineStats with execution results
@@ -603,5 +687,6 @@ def run_full_pipeline(
         num_runs=num_runs,
         subset_size=subset_size,
         output_dir=output_dir,
+        ref=ref,
     )
     return pipeline.run_collection()

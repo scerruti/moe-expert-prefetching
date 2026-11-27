@@ -143,8 +143,8 @@ def test_run_collection_runs_full_pass_once_then_subset_orderings(tmp_path):
     stats = pipeline.run_collection()
 
     full = [c for c in calls if c.path.parent.name == "full"]
-    subset = [c for c in calls if c.path.parent.name == "determinism"]
-    assert len(calls) == 2 + 3 * 2
+    subset = [c for c in calls if c.path.parent.name == "determinism" and c.path.name.startswith("run_")]
+    assert len(calls) == 2 + 3 * 2 + 2  # full passes, orderings, and the same-batch repeats (#134)
 
     assert {c.dataset: set(c.prompts) for c in full} == {"gsm8k": set(gsm8k), "mbpp": set(mbpp)}
     for dataset in ("gsm8k", "mbpp"):
